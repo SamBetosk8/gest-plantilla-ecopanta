@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Plus } from 'lucide-react';
-import { DataGrid, textEditor } from 'react-data-grid';
+import { DataGrid, renderTextEditor } from 'react-data-grid';
 import 'react-data-grid/lib/styles.css';
 
 const columnasBase = [
-  { key: 'fecha', name: 'Fecha', renderEditCell: textEditor },
-  { key: 'cliente', name: 'Cliente / Empresa', renderEditCell: textEditor },
-  { key: 'detalle', name: 'Trabajo Realizado / Insumo', renderEditCell: textEditor },
-  { key: 'monto', name: 'Monto Total', renderEditCell: textEditor }
+  { key: 'fecha', name: 'Fecha', renderEditCell: renderTextEditor },
+  { key: 'cliente', name: 'Cliente / Empresa', renderEditCell: renderTextEditor },
+  { key: 'detalle', name: 'Trabajo Realizado / Insumo', renderEditCell: renderTextEditor },
+  { key: 'monto', name: 'Monto Total', renderEditCell: renderTextEditor }
 ];
 
 const filasEjemplo = [
