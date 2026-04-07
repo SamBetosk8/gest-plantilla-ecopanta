@@ -5,15 +5,46 @@ import { DataGrid, renderTextEditor } from 'react-data-grid';
 import 'react-data-grid/lib/styles.css';
 
 const columnasBase = [
-  { key: 'fecha', name: 'Fecha', renderEditCell: renderTextEditor },
-  { key: 'cliente', name: 'Cliente / Empresa', renderEditCell: renderTextEditor },
-  { key: 'detalle', name: 'Trabajo Realizado / Insumo', renderEditCell: renderTextEditor },
-  { key: 'monto', name: 'Monto Total', renderEditCell: renderTextEditor }
+  { key: 'id', name: 'N°', width: 60 },
+  { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120 },
+  { key: 'cliente', name: 'CLIENTE', renderEditCell: renderTextEditor, width: 150 },
+  { key: 'empresa', name: 'EMPRESA', renderEditCell: renderTextEditor, width: 200 },
+  { key: 'ot', name: 'OT', renderEditCell: renderTextEditor, width: 80 },
+  { key: 'equipo', name: 'EQUIPO', renderEditCell: renderTextEditor, width: 120 },
+  { key: 'patente', name: 'PATENTE', renderEditCell: renderTextEditor, width: 100 },
+  { key: 'trabajo', name: 'TRABAJO REALIZADO', renderEditCell: renderTextEditor, width: 300 },
+  { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: renderTextEditor, width: 120 },
+  { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: renderTextEditor, width: 150 },
+  { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: renderTextEditor, width: 120 },
+  // Columnas calculadas (no llevan renderEditCell para que sean de solo lectura)
+  { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150 },
+  { key: 'estatus', name: 'ESTATUS', renderEditCell: renderTextEditor, width: 120 },
+  { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: renderTextEditor, width: 120 },
+  { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150 },
+  { key: 'factura', name: 'FACTURA', renderEditCell: renderTextEditor, width: 100 },
+  { key: 'fechaPago', name: 'FECHA DE PAGO', renderEditCell: renderTextEditor, width: 150 }
 ];
 
 const filasEjemplo = [
-  { id: 1, fecha: '2026-04-01', cliente: 'Ejemplo S.A.', detalle: 'Reparacion Tolva', monto: '150000' },
-  { id: 2, fecha: '2026-04-02', cliente: 'Proveedor XYZ', detalle: 'Compra Materiales', monto: '45000' }
+  { 
+    id: 1, 
+    fecha: '2026-03-03', 
+    cliente: 'PARTICULAR', 
+    empresa: 'Sociedad Comercial Minera', 
+    ot: '1464', 
+    equipo: 'TOLVA', 
+    patente: 'VSGX-17', 
+    trabajo: 'Fabricacion e Instalacion Autoencarpe', 
+    ventaNeta: '1900000', 
+    costoMateriales: '1601000', 
+    costoVarios: '0', 
+    balanceIngreso: 299000, 
+    estatus: 'CANCELADO', 
+    pagoNeto: '1000000', 
+    pagoIva: 2261000, 
+    factura: '', 
+    fechaPago: '2026-04-10' 
+  }
 ];
 
 export default function PlanillaView() {
@@ -24,15 +55,32 @@ export default function PlanillaView() {
     ? id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') 
     : 'Planilla';
 
+  // Funcion interceptora: Recibe los cambios y aplica las formulas matematicas
+  const procesarCambiosDeFilas = (nuevasFilas: any[]) => {
+    const filasActualizadas = nuevasFilas.map(fila => {
+      const venta = parseInt(fila.ventaNeta) || 0;
+      const mat = parseInt(fila.costoMateriales) || 0;
+      const varCosto = parseInt(fila.costoVarios) || 0;
+
+      return {
+        ...fila,
+        balanceIngreso: venta - mat - varCosto,
+        pagoIva: Math.round(venta * 1.19)
+      };
+    });
+    setRows(filasActualizadas);
+  };
+
   const agregarFila = () => {
     const nuevaFila = {
       id: rows.length > 0 ? Math.max(...rows.map(r => r.id)) + 1 : 1,
-      fecha: '',
-      cliente: '',
-      detalle: '',
-      monto: ''
+      fecha: '', cliente: '', empresa: '', ot: '', equipo: '', patente: '', trabajo: '',
+      ventaNeta: '0', costoMateriales: '0', costoVarios: '0', 
+      balanceIngreso: 0, estatus: 'PENDIENTE', pagoNeto: '0', pagoIva: 0, 
+      factura: '', fechaPago: ''
     };
-    setRows([...rows, nuevaFila]);
+    // Reutilizamos la funcion de formulas al crear una nueva fila
+    procesarCambiosDeFilas([...rows, nuevaFila]);
   };
 
   return (
@@ -66,7 +114,7 @@ export default function PlanillaView() {
         <DataGrid 
           columns={columnasBase} 
           rows={rows} 
-          onRowsChange={setRows}
+          onRowsChange={procesarCambiosDeFilas}
           className="h-full w-full"
         />
       </div>
