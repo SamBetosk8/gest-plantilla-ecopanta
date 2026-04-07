@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import DataGrid from 'react-data-grid';
-import 'react-data-grid/lib/styles.css'; // Importante: Esto carga los estilos tipo Excel
+import { DataGrid } from 'react-data-grid';
+import 'react-data-grid/lib/styles.css';
 
-// Definimos columnas básicas iniciales
 const columnasBase = [
   { key: 'fecha', name: 'Fecha' },
   { key: 'cliente', name: 'Cliente / Empresa' },
@@ -12,7 +11,6 @@ const columnasBase = [
   { key: 'monto', name: 'Monto Total' }
 ];
 
-// Un par de filas de ejemplo para ver que funciona
 const filasEjemplo = [
   { id: 1, fecha: '2026-04-01', cliente: 'Ejemplo S.A.', detalle: 'Reparación Tolva', monto: '150000' },
   { id: 2, fecha: '2026-04-02', cliente: 'Proveedor XYZ', detalle: 'Compra Materiales', monto: '45000' }
@@ -22,7 +20,6 @@ export default function PlanillaView() {
   const { id } = useParams();
   const [rows, setRows] = useState(filasEjemplo);
 
-  // Formatear el ID de la URL para que se vea bonito en el título
   const titulo = id 
     ? id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') 
     : 'Planilla';
@@ -45,11 +42,11 @@ export default function PlanillaView() {
         </div>
       </div>
       
-      {/* Contenedor de la tabla */}
       <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-inner overflow-hidden">
         <DataGrid 
           columns={columnasBase} 
           rows={rows} 
+          onRowsChange={setRows}
           className="h-full w-full"
         />
       </div>
