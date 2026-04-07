@@ -1,8 +1,31 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import DataGrid from 'react-data-grid';
+import 'react-data-grid/lib/styles.css'; // Importante: Esto carga los estilos tipo Excel
+
+// Definimos columnas básicas iniciales
+const columnasBase = [
+  { key: 'fecha', name: 'Fecha' },
+  { key: 'cliente', name: 'Cliente / Empresa' },
+  { key: 'detalle', name: 'Trabajo Realizado / Insumo' },
+  { key: 'monto', name: 'Monto Total' }
+];
+
+// Un par de filas de ejemplo para ver que funciona
+const filasEjemplo = [
+  { id: 1, fecha: '2026-04-01', cliente: 'Ejemplo S.A.', detalle: 'Reparación Tolva', monto: '150000' },
+  { id: 2, fecha: '2026-04-02', cliente: 'Proveedor XYZ', detalle: 'Compra Materiales', monto: '45000' }
+];
 
 export default function PlanillaView() {
   const { id } = useParams();
+  const [rows, setRows] = useState(filasEjemplo);
+
+  // Formatear el ID de la URL para que se vea bonito en el título
+  const titulo = id 
+    ? id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') 
+    : 'Planilla';
 
   return (
     <div className="p-6 h-screen flex flex-col">
@@ -11,7 +34,7 @@ export default function PlanillaView() {
           <ArrowLeft size={24} />
         </Link>
         <h1 className="text-2xl font-bold text-gray-800">
-          Editando Planilla: {id}
+          {titulo}
         </h1>
         <div className="ml-auto flex items-center gap-2">
           <span className="flex h-3 w-3 relative">
@@ -22,9 +45,13 @@ export default function PlanillaView() {
         </div>
       </div>
       
-      <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-inner flex items-center justify-center bg-gray-50">
-        {/* Aqui ira el componente react-data-grid */}
-        <p className="text-gray-400">Cargando cuadrícula de datos...</p>
+      {/* Contenedor de la tabla */}
+      <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-inner overflow-hidden">
+        <DataGrid 
+          columns={columnasBase} 
+          rows={rows} 
+          className="h-full w-full"
+        />
       </div>
     </div>
   );
