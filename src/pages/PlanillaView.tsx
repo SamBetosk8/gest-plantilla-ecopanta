@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Users, Upload } from 'lucide-react';
 import { DataGrid, renderTextEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, onValue, set, onDisconnect } from 'firebase/database';
+import * as XLSX from 'xlsx';
 import 'react-data-grid/lib/styles.css';
 
 const columnasBase = [
@@ -32,8 +33,10 @@ export default function PlanillaView() {
   const [rows, setRows] = useState<any[]>([]);
   const [activeUsers, setActiveUsers] = useState<any>({});
   const userName = localStorage.getItem('userName') || 'Invitado';
+  
+  // Referencia para el input de archivo oculto
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Sincronizacion de Datos (Firestore)
   useEffect(() => {
     if (!id) return;
     const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
@@ -44,7 +47,6 @@ export default function PlanillaView() {
     return () => unsub();
   }, [id]);
 
-  // 2. Sincronizacion de Presencia (RTDB)
   useEffect(() => {
     if (!id) return;
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
@@ -80,7 +82,6 @@ export default function PlanillaView() {
     guardarEnNube(actualizadas);
   };
 
-  // Funcion para agregar fila vinculada a Firebase
   const agregarFila = () => {
     const nuevaFila = {
       id: rows.length > 0 ? Math.max(...rows.map(r => r.id)) + 1 : 1,
@@ -92,6 +93,57 @@ export default function PlanillaView() {
     const nuevasFilas = [...rows, nuevaFila];
     setRows(nuevasFilas);
     guardarEnNube(nuevasFilas);
+  };
+
+  // Funcion para leer e importar el archivo Excel/CSV sin perder datos
+  const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = evt.target?.result;
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      let maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id)) : 0;
+
+      // Mapeamos las columnas de tu Excel a las llaves de nuestro sistema
+      const filasImportadas = jsonData.map((row: any) => {
+        maxId += 1;
+        return {
+          id: maxId,
+          fecha: row['FECHA'] || '',
+          cliente: row['CLIENTE'] || '',
+          empresa: row['EMPRESA '] || row['EMPRESA'] || '',
+          ot: row['OT'] || '',
+          equipo: row['EQUIPO'] || '',
+          patente: row['PATENTE'] || '',
+          trabajo: row['TRABAJO REALIZADO'] || '',
+          ventaNeta: row['VENTA NETA']?.toString() || '0',
+          costoMateriales: row['COSTO MATERIALES']?.toString() || '0',
+          costoVarios: row['COSTO VARIOS']?.toString() || '0',
+          estatus: row['ESTATUS'] || 'PENDIENTE',
+          pagoNeto: row['PAGO NETO']?.toString() || '0',
+          factura: row['FACTURA '] || row['FACTURA'] || '',
+          fechaPago: row['FECHA DE PAGO'] || row['FECHA PAGO'] || ''
+        };
+      });
+
+      // Sumamos lo que ya estaba en la base de datos con lo que acabamos de importar
+      const nuevasFilas = [...rows, ...filasImportadas];
+      
+      // Pasamos las filas por la calculadora automática y guardamos en la nube
+      procesarCambios(nuevasFilas);
+    };
+    reader.readAsArrayBuffer(file);
+    
+    // Reseteamos el input para que puedas subir el mismo archivo dos veces si te equivocas
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleCellClick = (args: any) => {
@@ -118,6 +170,22 @@ export default function PlanillaView() {
           Agregar Fila
         </button>
 
+        {/* Boton y logica de Importar Excel */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={importarExcel} 
+          accept=".xlsx, .xls, .csv" 
+          className="hidden" 
+        />
+        <button 
+          onClick={() => fileInputRef.current?.click()}
+          className="ml-2 flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
+        >
+          <Upload size={20} />
+          Importar Datos
+        </button>
+
         <div className="flex -space-x-2 overflow-hidden ml-4">
           {Object.values(activeUsers).map((user: any) => (
             <div 
@@ -125,7 +193,7 @@ export default function PlanillaView() {
               title={`${user.name} esta ${user.editing ? 'editando' : 'viendo'}`}
               className={`inline-block h-8 w-8 rounded-full ring-2 ring-white flex items-center justify-center text-xs font-bold text-white ${user.name === userName ? 'bg-blue-500' : 'bg-green-500'}`}
             >
-              {user.name[0]}
+              {user.name[0]?.toUpperCase()}
             </div>
           ))}
         </div>
@@ -142,6 +210,7 @@ export default function PlanillaView() {
           rows={rows} 
           onRowsChange={procesarCambios}
           onCellClick={handleCellClick}
+          rowKeyGetter={(row) => row.id} 
           className="h-full w-full"
         />
       </div>
