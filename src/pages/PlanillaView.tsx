@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, Users } from 'lucide-react';
 import { DataGrid, renderTextEditor } from 'react-data-grid';
+import { db, rtdb } from '../lib/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import 'react-data-grid/lib/styles.css';
 
 const columnasBase = [
@@ -16,7 +19,6 @@ const columnasBase = [
   { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: renderTextEditor, width: 120 },
   { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: renderTextEditor, width: 150 },
   { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: renderTextEditor, width: 120 },
-  // Columnas calculadas (no llevan renderEditCell para que sean de solo lectura)
   { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150 },
   { key: 'estatus', name: 'ESTATUS', renderEditCell: renderTextEditor, width: 120 },
   { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: renderTextEditor, width: 120 },
@@ -25,62 +27,69 @@ const columnasBase = [
   { key: 'fechaPago', name: 'FECHA DE PAGO', renderEditCell: renderTextEditor, width: 150 }
 ];
 
-const filasEjemplo = [
-  { 
-    id: 1, 
-    fecha: '2026-03-03', 
-    cliente: 'PARTICULAR', 
-    empresa: 'Sociedad Comercial Minera', 
-    ot: '1464', 
-    equipo: 'TOLVA', 
-    patente: 'VSGX-17', 
-    trabajo: 'Fabricacion e Instalacion Autoencarpe', 
-    ventaNeta: '1900000', 
-    costoMateriales: '1601000', 
-    costoVarios: '0', 
-    balanceIngreso: 299000, 
-    estatus: 'CANCELADO', 
-    pagoNeto: '1000000', 
-    pagoIva: 2261000, 
-    factura: '', 
-    fechaPago: '2026-04-10' 
-  }
-];
-
 export default function PlanillaView() {
   const { id } = useParams();
-  const [rows, setRows] = useState(filasEjemplo);
+  const [rows, setRows] = useState<any[]>([]);
+  const [activeUsers, setActiveUsers] = useState<any>({});
+  const userName = localStorage.getItem('userName') || 'Invitado';
 
-  const titulo = id 
-    ? id.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') 
-    : 'Planilla';
+  // 1. Sincronización de Datos (Firestore)
+  useEffect(() => {
+    if (!id) return;
+    const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
+      if (docSnap.exists()) {
+        setRows(docSnap.data().rows || []);
+      }
+    });
+    return () => unsub();
+  }, [id]);
 
-  // Funcion interceptora: Recibe los cambios y aplica las formulas matematicas
-  const procesarCambiosDeFilas = (nuevasFilas: any[]) => {
-    const filasActualizadas = nuevasFilas.map(fila => {
+  // 2. Sincronización de Presencia (RTDB)
+  useEffect(() => {
+    if (!id) return;
+    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const totalPresenceRef = ref(rtdb, `presence/${id}`);
+
+    // Registrar entrada
+    set(presenceRef, { name: userName, lastSeen: Date.now(), editing: null });
+    
+    // Eliminar al desconectar
+    onDisconnect(presenceRef).remove();
+
+    // Escuchar a otros usuarios
+    const unsubPresence = onValue(totalPresenceRef, (snapshot) => {
+      setActiveUsers(snapshot.val() || {});
+    });
+
+    return () => unsubPresence();
+  }, [id, userName]);
+
+  const guardarEnNube = async (nuevasFilas: any[]) => {
+    if (!id) return;
+    await setDoc(doc(db, 'planillas', id), { rows: nuevasFilas }, { merge: true });
+  };
+
+  const procesarCambios = (nuevasFilas: any[]) => {
+    const actualizadas = nuevasFilas.map(fila => {
       const venta = parseInt(fila.ventaNeta) || 0;
       const mat = parseInt(fila.costoMateriales) || 0;
-      const varCosto = parseInt(fila.costoVarios) || 0;
-
+      const varC = parseInt(fila.costoVarios) || 0;
       return {
         ...fila,
-        balanceIngreso: venta - mat - varCosto,
+        balanceIngreso: venta - mat - varC,
         pagoIva: Math.round(venta * 1.19)
       };
     });
-    setRows(filasActualizadas);
+    setRows(actualizadas);
+    guardarEnNube(actualizadas);
   };
 
-  const agregarFila = () => {
-    const nuevaFila = {
-      id: rows.length > 0 ? Math.max(...rows.map(r => r.id)) + 1 : 1,
-      fecha: '', cliente: '', empresa: '', ot: '', equipo: '', patente: '', trabajo: '',
-      ventaNeta: '0', costoMateriales: '0', costoVarios: '0', 
-      balanceIngreso: 0, estatus: 'PENDIENTE', pagoNeto: '0', pagoIva: 0, 
-      factura: '', fechaPago: ''
-    };
-    // Reutilizamos la funcion de formulas al crear una nueva fila
-    procesarCambiosDeFilas([...rows, nuevaFila]);
+  const handleCellClick = (args: any) => {
+    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    set(presenceRef, { 
+      name: userName, 
+      editing: { row: args.row.id, column: args.column.key } 
+    });
   };
 
   return (
@@ -89,32 +98,33 @@ export default function PlanillaView() {
         <Link to="/dashboard" className="text-gray-500 hover:text-gray-800">
           <ArrowLeft size={24} />
         </Link>
-        <h1 className="text-2xl font-bold text-gray-800">
-          {titulo}
-        </h1>
+        <h1 className="text-2xl font-bold uppercase">{id?.replace('-', ' ')}</h1>
         
-        <button 
-          onClick={agregarFila}
-          className="ml-4 flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} />
-          Agregar Fila
-        </button>
+        {/* Indicador de Usuarios Conectados */}
+        <div className="flex -space-x-2 overflow-hidden ml-4">
+          {Object.values(activeUsers).map((user: any) => (
+            <div 
+              key={user.name}
+              title={`${user.name} está ${user.editing ? 'editando' : 'viendo'}`}
+              className={`inline-block h-8 w-8 rounded-full ring-2 ring-white flex items-center justify-center text-xs font-bold text-white ${user.name === userName ? 'bg-blue-500' : 'bg-green-500'}`}
+            >
+              {user.name[0]}
+            </div>
+          ))}
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="flex h-3 w-3 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-          </span>
-          <span className="text-sm text-gray-500">Local (Sin guardar)</span>
+          <Users size={16} className="text-green-500" />
+          <span className="text-sm text-gray-500">{Object.keys(activeUsers).length} activos</span>
         </div>
       </div>
       
-      <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-inner overflow-hidden">
+      <div className="flex-1 bg-white border border-gray-200 rounded-lg shadow-inner overflow-hidden relative">
         <DataGrid 
           columns={columnasBase} 
           rows={rows} 
-          onRowsChange={procesarCambiosDeFilas}
+          onRowsChange={procesarCambios}
+          onCellClick={handleCellClick}
           className="h-full w-full"
         />
       </div>
