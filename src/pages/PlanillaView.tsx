@@ -33,7 +33,7 @@ export default function PlanillaView() {
   const [activeUsers, setActiveUsers] = useState<any>({});
   const userName = localStorage.getItem('userName') || 'Invitado';
 
-  // 1. Sincronización de Datos (Firestore)
+  // 1. Sincronizacion de Datos (Firestore)
   useEffect(() => {
     if (!id) return;
     const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
@@ -44,19 +44,15 @@ export default function PlanillaView() {
     return () => unsub();
   }, [id]);
 
-  // 2. Sincronización de Presencia (RTDB)
+  // 2. Sincronizacion de Presencia (RTDB)
   useEffect(() => {
     if (!id) return;
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
     const totalPresenceRef = ref(rtdb, `presence/${id}`);
 
-    // Registrar entrada
     set(presenceRef, { name: userName, lastSeen: Date.now(), editing: null });
-    
-    // Eliminar al desconectar
     onDisconnect(presenceRef).remove();
 
-    // Escuchar a otros usuarios
     const unsubPresence = onValue(totalPresenceRef, (snapshot) => {
       setActiveUsers(snapshot.val() || {});
     });
@@ -84,6 +80,20 @@ export default function PlanillaView() {
     guardarEnNube(actualizadas);
   };
 
+  // Funcion para agregar fila vinculada a Firebase
+  const agregarFila = () => {
+    const nuevaFila = {
+      id: rows.length > 0 ? Math.max(...rows.map(r => r.id)) + 1 : 1,
+      fecha: '', cliente: '', empresa: '', ot: '', equipo: '', patente: '', trabajo: '',
+      ventaNeta: '0', costoMateriales: '0', costoVarios: '0', 
+      balanceIngreso: 0, estatus: 'PENDIENTE', pagoNeto: '0', pagoIva: 0, 
+      factura: '', fechaPago: ''
+    };
+    const nuevasFilas = [...rows, nuevaFila];
+    setRows(nuevasFilas);
+    guardarEnNube(nuevasFilas);
+  };
+
   const handleCellClick = (args: any) => {
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
     set(presenceRef, { 
@@ -100,12 +110,19 @@ export default function PlanillaView() {
         </Link>
         <h1 className="text-2xl font-bold uppercase">{id?.replace('-', ' ')}</h1>
         
-        {/* Indicador de Usuarios Conectados */}
+        <button 
+          onClick={agregarFila}
+          className="ml-4 flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+        >
+          <Plus size={20} />
+          Agregar Fila
+        </button>
+
         <div className="flex -space-x-2 overflow-hidden ml-4">
           {Object.values(activeUsers).map((user: any) => (
             <div 
               key={user.name}
-              title={`${user.name} está ${user.editing ? 'editando' : 'viendo'}`}
+              title={`${user.name} esta ${user.editing ? 'editando' : 'viendo'}`}
               className={`inline-block h-8 w-8 rounded-full ring-2 ring-white flex items-center justify-center text-xs font-bold text-white ${user.name === userName ? 'bg-blue-500' : 'bg-green-500'}`}
             >
               {user.name[0]}
