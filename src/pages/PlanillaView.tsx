@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Users, Upload, PaintBucket } from 'lucide-react';
+import { ArrowLeft, Upload, PaintBucket } from 'lucide-react';
 import { DataGrid, renderTextEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -8,7 +8,6 @@ import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'react-data-grid/lib/styles.css';
 
-// Función auxiliar para crear filas limpias (ahora incluye "format" para guardar los colores)
 const crearFilaVacia = (id: number) => ({
   id, fecha: '', cliente: '', empresa: '', ot: '', equipo: '', patente: '', trabajo: '',
   ventaNeta: '0', costoMateriales: '0', costoVarios: '0', 
@@ -37,8 +36,6 @@ export default function PlanillaView() {
   const { id } = useParams();
   const [rows, setRows] = useState<any[]>([]);
   const [activeUsers, setActiveUsers] = useState<any>({});
-  
-  // Nuevo estado para saber qué celda seleccionaste para poder pintarla
   const [celdaSeleccionada, setCeldaSeleccionada] = useState<{rowId: number, columnKey: string} | null>(null);
   
   const userName = localStorage.getItem('userName') || 'Invitado';
@@ -89,7 +86,7 @@ export default function PlanillaView() {
         ...fila,
         balanceIngreso: venta - mat - varC,
         pagoIva: Math.round(venta * 1.19),
-        format: fila.format || {} // Asegurar que format exista
+        format: fila.format || {} 
       };
     });
 
@@ -102,7 +99,6 @@ export default function PlanillaView() {
     guardarEnNube(actualizadas);
   };
 
-  // Función para pintar la celda seleccionada
   const pintarCelda = (colorClass: string) => {
     if (!celdaSeleccionada) return;
     
@@ -123,14 +119,12 @@ export default function PlanillaView() {
     guardarEnNube(nuevasFilas);
   };
 
-  // Lógica Visual: Mezcla el color de fondo guardado con el borde de quien está editando
   const getCellClass = (row: any, columnKey: string) => {
-    let classes = row.format?.[columnKey] || ''; // Color de fondo si lo tiene
+    let classes = row.format?.[columnKey] || ''; 
     
     for (const key in activeUsers) {
       const user = activeUsers[key];
       if (user.editing && user.editing.row === row.id && user.editing.column === columnKey) {
-        // z-10 y ring-2 aseguran que el borde resalte fuerte por encima del resto
         classes += ` ring-2 ring-inset z-10 relative ${obtenerColorUsuario(user.name).border}`;
       }
     }
@@ -155,10 +149,9 @@ export default function PlanillaView() {
     { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150, cellClass: (r: any) => getCellClass(r, 'pagoIva') },
     { key: 'factura', name: 'FACTURA', renderEditCell: renderTextEditor, width: 100, cellClass: (r: any) => getCellClass(r, 'factura') },
     { key: 'fechaPago', name: 'FECHA DE PAGO', renderEditCell: renderTextEditor, width: 150, cellClass: (r: any) => getCellClass(r, 'fechaPago') }
-  ], [activeUsers, rows]); // Ahora las columnas se actualizan si cambian las filas (por los colores)
+  ], [activeUsers, rows]);
 
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // ... (Mismo código de importación de antes)
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -192,10 +185,8 @@ export default function PlanillaView() {
   };
 
   const handleCellClick = (args: any) => {
-    // Guarda localmente qué celda tocaste por si quieres pintarla
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
 
-    // Avisa a Firebase dónde estás editando
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
     set(presenceRef, { 
       name: userName, 
@@ -204,24 +195,21 @@ export default function PlanillaView() {
   };
 
   return (
-    // Reduje el padding principal (p-2) para hacer la tabla más ancha y alta
     <div className="p-2 h-screen flex flex-col bg-gray-50">
       
-      {/* Barra de Herramientas Superior */}
       <div className="flex items-center gap-4 mb-3 px-2">
         <Link to="/dashboard" className="text-gray-500 hover:text-gray-800">
           <ArrowLeft size={24} />
         </Link>
         <h1 className="text-xl font-bold uppercase text-gray-800 mr-4">{id?.replace('-', ' ')}</h1>
         
-        {/* Herramienta de Relleno de Color (Estilo Excel) */}
         <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
           <PaintBucket size={18} className="text-gray-400 mx-2" />
           <button onClick={() => pintarCelda('bg-yellow-100 text-yellow-900')} className="w-6 h-6 rounded bg-yellow-100 border border-yellow-300 hover:scale-110 transition-transform" title="Amarillo" />
           <button onClick={() => pintarCelda('bg-green-100 text-green-900')} className="w-6 h-6 rounded bg-green-100 border border-green-300 hover:scale-110 transition-transform" title="Verde" />
           <button onClick={() => pintarCelda('bg-red-100 text-red-900')} className="w-6 h-6 rounded bg-red-100 border border-red-300 hover:scale-110 transition-transform" title="Rojo" />
           <button onClick={() => pintarCelda('bg-blue-100 text-blue-900')} className="w-6 h-6 rounded bg-blue-100 border border-blue-300 hover:scale-110 transition-transform" title="Azul" />
-          <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border border-gray-300 hover:scale-110 transition-transform flex items-center justify-center text-xs text-gray-400" title="Quitar Color">✖</button>
+          <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border border-gray-300 hover:scale-110 transition-transform flex items-center justify-center text-xs text-gray-400" title="Quitar Color">X</button>
         </div>
 
         <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
@@ -233,7 +221,6 @@ export default function PlanillaView() {
           Importar
         </button>
 
-        {/* Avatares de Usuarios (Solo 1 Letra) */}
         <div className="flex -space-x-2 overflow-hidden ml-auto pr-4">
           {Object.values(activeUsers).map((user: any) => (
             <div 
@@ -251,11 +238,10 @@ export default function PlanillaView() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
           </span>
-          <span className="text-xs font-medium text-gray-600">{Object.keys(activeUsers).length} en línea</span>
+          <span className="text-xs font-medium text-gray-600">{Object.keys(activeUsers).length} en linea</span>
         </div>
       </div>
       
-      {/* Contenedor de la Tabla Extendida */}
       <div className="flex-1 bg-white border border-gray-300 shadow-sm overflow-hidden relative">
         <DataGrid 
           columns={columnasBase} 
