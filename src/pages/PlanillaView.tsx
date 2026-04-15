@@ -89,21 +89,31 @@ export default function PlanillaView() {
       return fila;
     });
 
-    if (actualizadas[actualizadas.length - 1] && !esFilaVacia(actualizadas[actualizadas.length - 1])) {
-      actualizadas.push(crearFilaVacia(Math.max(...actualizadas.map(r => r.id)) + 1));
-    }
-
     const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, rows: actualizadas } : h);
+    setHojas(nuevasHojas);
+    guardarEnNube(nuevasHojas);
+  };
+
+  const agregarFilaManual = () => {
+    const maxId = hojaActiva.rows.length > 0 ? Math.max(...hojaActiva.rows.map((r:any) => r.id)) : 0;
+    const nuevasFilas = [...hojaActiva.rows, crearFilaVacia(maxId + 1)];
+    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, rows: nuevasFilas } : h);
     setHojas(nuevasHojas);
     guardarEnNube(nuevasHojas);
   };
 
   const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
     let actualizadas = [...nuevasFilasSueldo];
-    if (actualizadas[actualizadas.length - 1] && !esFilaSueldoVacia(actualizadas[actualizadas.length - 1])) {
-      actualizadas.push(crearFilaSueldo(Math.max(...actualizadas.map(r => r.id)) + 1));
-    }
     const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: actualizadas } : h);
+    setHojas(nuevasHojas);
+    guardarEnNube(nuevasHojas);
+  };
+
+  const agregarFilaSueldoManual = () => {
+    const sueldosActuales = hojaActiva.sueldos || [];
+    const maxId = sueldosActuales.length > 0 ? Math.max(...sueldosActuales.map((r:any) => r.id)) : 0;
+    const nuevasFilas = [...sueldosActuales, crearFilaSueldo(maxId + 1)];
+    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: nuevasFilas } : h);
     setHojas(nuevasHojas);
     guardarEnNube(nuevasHojas);
   };
@@ -162,39 +172,39 @@ export default function PlanillaView() {
     return classes;
   };
 
-  // --- COLUMNAS (AHORA TODAS SON REDIMENSIONABLES - resizable: true) ---
+  // --- COLUMNAS PRINCIPALES (ANCHOS MEJORADOS) ---
   const columnasBase = useMemo(() => {
     if (esFactura) {
       return [
         { key: 'id', name: 'N°', width: 60, resizable: true },
-        { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
-        { key: 'nFactura', name: 'N° FACTURA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'nFactura') },
-        { key: 'nBoleta', name: 'N° BOLETA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'nBoleta') },
-        { key: 'proveedor', name: 'PROVEEDOR', renderEditCell: renderTextEditor, width: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'proveedor') },
-        { key: 'insumo', name: 'INSUMO / DETALLE', renderEditCell: renderTextEditor, width: 400, resizable: true, cellClass: (r: any) => getCellClass(r, 'insumo') },
-        { key: 'totalFactura', name: 'TOTAL FACTURA', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalFactura') },
-        { key: 'totalBoleta', name: 'TOTAL BOLETA', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalBoleta') },
-        { key: 'observaciones', name: 'OBSERVACIONES', renderEditCell: renderTextEditor, width: 250, resizable: true, cellClass: (r: any) => getCellClass(r, 'observaciones') }
+        { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
+        { key: 'nFactura', name: 'N° FACTURA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'nFactura') },
+        { key: 'nBoleta', name: 'N° BOLETA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'nBoleta') },
+        { key: 'proveedor', name: 'PROVEEDOR', renderEditCell: renderTextEditor, width: 250, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'proveedor') },
+        { key: 'insumo', name: 'INSUMO / DETALLE', renderEditCell: renderTextEditor, width: 400, minWidth: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'insumo') },
+        { key: 'totalFactura', name: 'TOTAL FACTURA', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalFactura') },
+        { key: 'totalBoleta', name: 'TOTAL BOLETA', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalBoleta') },
+        { key: 'observaciones', name: 'OBSERVACIONES', renderEditCell: renderTextEditor, width: 300, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'observaciones') }
       ];
     } else {
       return [
         { key: 'id', name: 'N°', width: 60, resizable: true },
-        { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
-        { key: 'cliente', name: 'CLIENTE', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cliente') },
-        { key: 'empresa', name: 'EMPRESA', renderEditCell: renderTextEditor, width: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'empresa') },
-        { key: 'ot', name: 'OT', renderEditCell: renderTextEditor, width: 80, resizable: true, cellClass: (r: any) => getCellClass(r, 'ot') },
-        { key: 'equipo', name: 'EQUIPO', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'equipo') },
-        { key: 'patente', name: 'PATENTE', renderEditCell: renderTextEditor, width: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'patente') },
-        { key: 'trabajo', name: 'TRABAJO REALIZADO', renderEditCell: renderTextEditor, width: 300, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajo') },
-        { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'ventaNeta') },
-        { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoMateriales') },
-        { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoVarios') },
-        { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'balanceIngreso') },
-        { key: 'estatus', name: 'ESTATUS', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'estatus') },
-        { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoNeto') },
-        { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoIva') },
-        { key: 'factura', name: 'FACTURA', renderEditCell: renderTextEditor, width: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'factura') },
-        { key: 'fechaPago', name: 'FECHA DE PAGO', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'fechaPago') }
+        { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
+        { key: 'cliente', name: 'CLIENTE', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'cliente') },
+        { key: 'empresa', name: 'EMPRESA', renderEditCell: renderTextEditor, width: 200, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'empresa') },
+        { key: 'ot', name: 'OT', renderEditCell: renderTextEditor, width: 80, minWidth: 80, resizable: true, cellClass: (r: any) => getCellClass(r, 'ot') },
+        { key: 'equipo', name: 'EQUIPO', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'equipo') },
+        { key: 'patente', name: 'PATENTE', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'patente') },
+        { key: 'trabajo', name: 'TRABAJO REALIZADO', renderEditCell: renderTextEditor, width: 350, minWidth: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajo') },
+        { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'ventaNeta') },
+        { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoMateriales') },
+        { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoVarios') },
+        { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'balanceIngreso') },
+        { key: 'estatus', name: 'ESTATUS', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'estatus') },
+        { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoNeto') },
+        { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoIva') },
+        { key: 'factura', name: 'FACTURA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'factura') },
+        { key: 'fechaPago', name: 'FECHA PAGO', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fechaPago') }
       ];
     }
   }, [activeUsers, hojas, hojaActivaId]);
@@ -206,7 +216,7 @@ export default function PlanillaView() {
     { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: renderTextEditor, width: 150, resizable: true }
   ];
 
-  // --- IMPORTACIÓN INTELIGENTE (Detecta Sueldos y evita basura) ---
+  // --- IMPORTACIÓN ARREGLADA CON ESCANER DE CABECERAS ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -223,28 +233,37 @@ export default function PlanillaView() {
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // 1. ESCÁNER DE SUELDOS (Lee el archivo en crudo para detectar la linea de sueldos)
-      const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
+      // Leer todo en formato de matriz cruda para analizar donde están los títulos
+      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
+      
+      let headerRowIdx = -1;
       let sueldosExtraidos: any[] = [];
       let idSueldoBase = 1000;
 
-      for (let i = 0; i < rawRows.length; i++) {
-        const rowArr = rawRows[i] as string[];
+      // Escáner de Cabeceras Inteligente y Extractor de Sueldos
+      for (let i = 0; i < rawData.length; i++) {
+        const rowArr = rawData[i] as string[];
         const rowStr = rowArr.join(' ').toUpperCase();
         
+        // Buscar donde empieza la tabla realmente
+        if (headerRowIdx === -1 && rowStr.includes('FECHA')) {
+          headerRowIdx = i;
+        }
+
+        // Extraer Sueldos
         if (rowStr.includes('SUELDO')) {
           const idxSueldo = rowArr.findIndex(c => String(c).toUpperCase().includes('SUELDO'));
           const idxCotiz = rowArr.findIndex(c => String(c).toUpperCase().includes('COTIZA'));
           
-          if (i + 1 < rawRows.length) {
-            const nextRow = rawRows[i + 1] as string[];
+          if (i + 1 < rawData.length) {
+            const nextRow = rawData[i + 1] as string[];
             const valSueldo = idxSueldo !== -1 && nextRow[idxSueldo] ? String(nextRow[idxSueldo]).replace(/[^0-9]/g, '') : '0';
             const valCotiz = idxCotiz !== -1 && nextRow[idxCotiz] ? String(nextRow[idxCotiz]).replace(/[^0-9]/g, '') : '0';
             
             if (valSueldo !== '0' || valCotiz !== '0') {
               sueldosExtraidos.push({
                 id: idSueldoBase++,
-                trabajador: 'Importado (Auto-Detectado)',
+                trabajador: '',
                 sueldo: valSueldo,
                 cotizacion: valCotiz
               });
@@ -253,45 +272,81 @@ export default function PlanillaView() {
         }
       }
 
-      // 2. PROCESAMIENTO DE TABLA PRINCIPAL (Evitando basura)
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' });
+      if (headerRowIdx === -1) {
+        alert("No se encontró la columna 'FECHA' en el archivo. El sistema no sabe cómo leerlo.");
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      // Convertir las cabeceras reales a mayúsculas
+      const headers = (rawData[headerRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
+      
+      // Función para buscar valores sin importar en que columna esten
+      const getValue = (rowArr: string[], ...possibleNames: string[]) => {
+        for (let name of possibleNames) {
+          const idx = headers.findIndex(h => h.includes(name));
+          if (idx !== -1 && rowArr[idx]) return String(rowArr[idx]).trim();
+        }
+        return '';
+      };
+
       const filasActuales = modoReemplazo ? [] : hojaActiva.rows.filter((r: any) => !esFilaVacia(r));
       let maxId = filasActuales.length > 0 ? Math.max(...filasActuales.map((r: any) => r.id)) : 0;
-
       const filasImportadas: any[] = [];
-      jsonData.forEach((row: any) => {
-        const rowUpper = Object.values(row).join(' ').toUpperCase();
-        // Si detecta la palabra sueldo, salta esta fila para no meterla en la tabla general
-        if (rowUpper.includes('SUELDO') || rowUpper.includes('COTIZA')) return; 
+
+      // Procesar datos desde la fila debajo de las cabeceras
+      for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+        const rowArr = rawData[i] as string[];
+        if (!rowArr || rowArr.length === 0) continue;
+
+        const rowUpper = rowArr.join(' ').toUpperCase();
+        if (rowUpper.includes('SUELDO') || rowUpper.includes('COTIZA')) continue; // Ignorar basura de sueldos
+
+        const fecha = getValue(rowArr, 'FECHA');
+        const cliente = getValue(rowArr, 'CLIENTE');
+        const proveedor = getValue(rowArr, 'PROVEEDOR');
+        const trabajo = getValue(rowArr, 'TRABAJO', 'DETALLE', 'INSUMO');
         
-        // Filtro de "filas fantasma" al final del Excel
-        const tieneFecha = !!row['FECHA'];
-        const tieneTrabajo = !!row['TRABAJO REALIZADO'] || !!row['CLIENTE'];
-        const tieneProv = !!row['PROVEEDOR'] || !!row['INSUMO'] || !!row['DETALLE'];
-        
-        if (!tieneFecha && !tieneTrabajo && !tieneProv) return; // Si no tiene nada de valor, la ignora
+        // Filtro de filas vacías (evita meter filas enteras con puros ceros)
+        if (!fecha && !cliente && !proveedor && !trabajo) continue;
 
         maxId += 1;
         if (esFactura) {
           filasImportadas.push({
             id: maxId,
-            fecha: row['FECHA'] || '', nFactura: row['N° FACTURA'] || '', nBoleta: row['N°BOLETA'] || row['N° BOLETA'] || '',
-            proveedor: row['PROVEEDOR'] || '', insumo: row['INSUMO'] || row['DETALLE'] || '',
-            totalFactura: row['TOTAL FACTURAS'] || row['TOTAL FACTURA'] || '0', 
-            totalBoleta: row['TOTAL BOLETAS'] || row['TOTAL BOLETA'] || '0', format: {}
+            fecha: fecha,
+            nFactura: getValue(rowArr, 'FACTURA'),
+            nBoleta: getValue(rowArr, 'BOLETA'),
+            proveedor: proveedor,
+            insumo: trabajo,
+            totalFactura: getValue(rowArr, 'TOTAL FACTURA') || '0', 
+            totalBoleta: getValue(rowArr, 'TOTAL BOLETA') || '0',
+            observaciones: getValue(rowArr, 'OBSERVA'),
+            format: {}
           });
         } else {
           filasImportadas.push({
             id: maxId,
-            fecha: row['FECHA'] || '', cliente: row['CLIENTE'] || '', empresa: row['EMPRESA '] || row['EMPRESA'] || '',
-            ot: row['OT'] || '', equipo: row['EQUIPO'] || '', patente: row['PATENTE'] || '', trabajo: row['TRABAJO REALIZADO'] || '',
-            ventaNeta: row['VENTA NETA'] || '0', costoMateriales: row['COSTO MATERIALES'] || '0',
-            costoVarios: row['COSTO VARIOS'] || '0', estatus: row['ESTATUS'] || 'PENDIENTE',
-            pagoNeto: row['PAGO NETO'] || '0', factura: row['FACTURA '] || row['FACTURA'] || '',
-            fechaPago: row['FECHA DE PAGO'] || row['FECHA PAGO'] || '', format: {}
+            fecha: fecha,
+            cliente: cliente,
+            empresa: getValue(rowArr, 'EMPRESA'),
+            ot: getValue(rowArr, 'OT'),
+            equipo: getValue(rowArr, 'EQUIPO'),
+            patente: getValue(rowArr, 'PATENTE'),
+            trabajo: trabajo,
+            ventaNeta: getValue(rowArr, 'VENTA NETA') || '0',
+            costoMateriales: getValue(rowArr, 'COSTO MATERIALES') || '0',
+            costoVarios: getValue(rowArr, 'COSTO VARIOS') || '0',
+            balanceIngreso: 0,
+            estatus: getValue(rowArr, 'ESTATUS') || 'PENDIENTE',
+            pagoNeto: getValue(rowArr, 'PAGO NETO') || '0',
+            pagoIva: 0,
+            factura: getValue(rowArr, 'FACTURA'),
+            fechaPago: getValue(rowArr, 'FECHA PAGO', 'FECHA DE PAGO'),
+            format: {}
           });
         }
-      });
+      }
 
       // 3. JUNTAR TODO Y GUARDAR
       const nuevasFilas = [...filasActuales, ...filasImportadas];
@@ -300,10 +355,8 @@ export default function PlanillaView() {
 
       const hojasActualizadas = hojas.map(h => {
         if (h.id === hojaActivaId) {
-          // Asegurar filas en blanco al final
-          if (nuevasFilas.length === 0 || !esFilaVacia(nuevasFilas[nuevasFilas.length - 1])) nuevasFilas.push(crearFilaVacia(maxId + 1));
-          if (todosLosSueldos.length === 0 || !esFilaSueldoVacia(todosLosSueldos[todosLosSueldos.length - 1])) todosLosSueldos.push(crearFilaSueldo(idSueldoBase + 1));
-          
+          if (nuevasFilas.length === 0) nuevasFilas.push(crearFilaVacia(maxId + 1));
+          if (todosLosSueldos.length === 0) todosLosSueldos.push(crearFilaSueldo(idSueldoBase + 1));
           return { ...h, rows: nuevasFilas, sueldos: todosLosSueldos };
         }
         return h;
@@ -327,18 +380,19 @@ export default function PlanillaView() {
       
       {/* Estilos para forzar BORDES TIPO EXCEL */}
       <style>{`
-        .rdg { --rdg-border-color: #d1d5db; }
-        .rdg-cell { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
+        .rdg { --rdg-border-color: #d1d5db; height: 100%; border: none; }
+        .rdg-cell { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 0 8px; }
         .rdg-header-cell { background-color: #f3f4f6; border-bottom: 2px solid #9ca3af; font-weight: bold; color: #374151; }
       `}</style>
 
       {/* Barra de Herramientas Superior */}
-      <div className="flex items-center gap-4 mb-2 px-2 shrink-0">
-        <Link to="/dashboard" className="text-gray-500 hover:text-gray-800">
+      <div className="flex items-center gap-2 mb-2 px-2 shrink-0 flex-wrap">
+        <Link to="/dashboard" className="text-gray-500 hover:text-gray-800 mr-2">
           <ArrowLeft size={24} />
         </Link>
-        <h1 className="text-xl font-bold uppercase text-gray-800 mr-2">{id?.replace('-', ' ')}</h1>
+        <h1 className="text-xl font-bold uppercase text-gray-800 mr-2 whitespace-nowrap">{id?.replace('-', ' ')}</h1>
         
+        {/* Herramientas de Edición */}
         <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
           <PaintBucket size={18} className="text-gray-400 mx-2" />
           <button onClick={() => pintarCelda('bg-yellow-100 text-yellow-900')} className="w-6 h-6 rounded bg-yellow-100 border border-yellow-300 hover:scale-110" />
@@ -348,18 +402,21 @@ export default function PlanillaView() {
           <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border border-gray-300 hover:scale-110 text-xs text-gray-400">✖</button>
         </div>
 
+        <button onClick={agregarFilaManual} className="ml-2 flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-blue-700 whitespace-nowrap">
+          <Plus size={16} /> Agregar Fila
+        </button>
+
         <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
-        <button onClick={() => fileInputRef.current?.click()} className="ml-2 flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700">
+        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700 whitespace-nowrap">
           <Upload size={16} /> Importar
         </button>
 
-        {/* Boton Mini-Tabla de Sueldos */}
         {!esFactura && (
           <button 
             onClick={() => setMostrarSueldos(!mostrarSueldos)} 
-            className="ml-2 flex items-center gap-2 bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-blue-700"
+            className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-indigo-700 whitespace-nowrap"
           >
-            <Calculator size={16} /> Sueldos y Cotizaciones
+            <Calculator size={16} /> Sueldos
           </button>
         )}
 
@@ -374,22 +431,27 @@ export default function PlanillaView() {
 
       {/* MINI-TABLA FLOTANTE DE SUELDOS */}
       {mostrarSueldos && !esFactura && (
-        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-blue-200 shadow-2xl rounded-lg w-[650px] h-[400px] flex flex-col overflow-hidden">
-          <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex justify-between items-center shrink-0">
-            <h2 className="font-bold text-blue-800 flex items-center gap-2">
+        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-lg w-[650px] h-[450px] flex flex-col overflow-hidden">
+          <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex justify-between items-center shrink-0">
+            <h2 className="font-bold text-indigo-800 flex items-center gap-2">
               <Calculator size={18} /> Sueldos y Cotizaciones ({hojaActiva.nombre})
             </h2>
             <button onClick={() => setMostrarSueldos(false)} className="text-gray-500 hover:text-red-500">
               <X size={20} />
             </button>
           </div>
-          <div className="flex-1 overflow-auto bg-white">
+          <div className="bg-gray-100 p-2 border-b border-gray-200 shrink-0">
+            <button onClick={agregarFilaSueldoManual} className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 text-sm rounded shadow hover:bg-indigo-700">
+              <Plus size={16} /> Agregar Fila
+            </button>
+          </div>
+          <div className="flex-1 bg-white">
              <DataGrid 
                 columns={columnasSueldos} 
                 rows={hojaActiva.sueldos || [crearFilaSueldo(1)]} 
                 onRowsChange={procesarCambiosSueldos}
                 rowKeyGetter={(row: any) => row.id}
-                className="h-full w-full"
+                className="h-full w-full rdg-light"
               />
           </div>
         </div>
@@ -397,20 +459,17 @@ export default function PlanillaView() {
       
       {/* Contenedor de la Tabla Principal */}
       <div className="flex-1 bg-white border border-gray-300 shadow-sm relative overflow-hidden flex flex-col rounded-t-lg">
-        <div className="flex-1 overflow-auto">
-          <DataGrid 
-            columns={columnasBase} 
-            rows={hojaActiva.rows} 
-            onRowsChange={procesarCambios}
-            onCellClick={handleCellClick}
-            rowKeyGetter={(row: any) => row.id}
-            className="h-full w-full"
-            style={{ height: '100%' }}
-          />
-        </div>
+        <DataGrid 
+          columns={columnasBase} 
+          rows={hojaActiva.rows} 
+          onRowsChange={procesarCambios}
+          onCellClick={handleCellClick}
+          rowKeyGetter={(row: any) => row.id}
+          className="h-full w-full rdg-light"
+        />
       </div>
 
-      {/* SISTEMA DE PESTAÑAS (TABS ABAJO) CON EDICIÓN/ELIMINACIÓN */}
+      {/* SISTEMA DE PESTAÑAS (TABS ABAJO) */}
       <div className="flex items-center gap-1 pt-1 shrink-0 overflow-x-auto bg-gray-50">
         {hojas.map((hoja) => (
           <div
@@ -425,20 +484,11 @@ export default function PlanillaView() {
             <FileSpreadsheet size={16} />
             <span onDoubleClick={() => renombrarHoja(hoja.id, hoja.nombre)}>{hoja.nombre}</span>
             
-            {/* Botones de Editar y Eliminar (Solo en la hoja activa) */}
             {hojaActivaId === hoja.id && (
               <div className="flex items-center gap-1 ml-2">
-                 <Edit2 
-                    size={14} 
-                    className="text-gray-400 hover:text-blue-500" 
-                    onClick={(e) => { e.stopPropagation(); renombrarHoja(hoja.id, hoja.nombre); }} 
-                 />
+                 <Edit2 size={14} className="text-gray-400 hover:text-blue-500" onClick={(e) => { e.stopPropagation(); renombrarHoja(hoja.id, hoja.nombre); }} />
                  {hojas.length > 1 && (
-                   <X 
-                      size={14} 
-                      className="text-gray-400 hover:text-red-500" 
-                      onClick={(e) => { e.stopPropagation(); eliminarHoja(hoja.id); }} 
-                   />
+                   <X size={14} className="text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); eliminarHoja(hoja.id); }} />
                  )}
               </div>
             )}
