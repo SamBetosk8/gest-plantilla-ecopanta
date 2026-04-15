@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, PaintBucket, Plus, FileSpreadsheet } from 'lucide-react';
+import { ArrowLeft, Upload, PaintBucket, Plus, FileSpreadsheet, Calculator, X } from 'lucide-react';
 import { DataGrid, renderTextEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -10,7 +10,10 @@ import 'react-data-grid/lib/styles.css';
 
 // --- GENERADORES Y AUXILIARES ---
 const crearFilaVacia = (id: number) => ({ id, format: {} });
+const crearFilaSueldo = (id: number) => ({ id, trabajador: '', sueldo: '0', cotizacion: '0' });
+
 const esFilaVacia = (fila: any) => Object.keys(fila).every(k => k === 'id' || k === 'format' || !fila[k] || fila[k] === '0');
+const esFilaSueldoVacia = (fila: any) => !fila.trabajador && fila.sueldo === '0' && fila.cotizacion === '0';
 
 const obtenerColorUsuario = (nombre: string) => {
   const paleta = [
@@ -28,15 +31,16 @@ export default function PlanillaView() {
   const userName = localStorage.getItem('userName') || 'Invitado';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- ESTADOS DE DATOS MULTI-HOJA ---
-  const [hojas, setHojas] = useState<any[]>([{ id: 'hoja-1', nombre: 'Hoja 1', rows: [crearFilaVacia(1)] }]);
+  // --- ESTADOS ---
+  const [hojas, setHojas] = useState<any[]>([{ id: 'hoja-1', nombre: 'Hoja 1', rows: [crearFilaVacia(1)], sueldos: [crearFilaSueldo(1)] }]);
   const [hojaActivaId, setHojaActivaId] = useState<string>('hoja-1');
   const [activeUsers, setActiveUsers] = useState<any>({});
   const [celdaSeleccionada, setCeldaSeleccionada] = useState<{rowId: number, columnKey: string} | null>(null);
+  
+  // Estado para mostrar la mini-tabla de sueldos
+  const [mostrarSueldos, setMostrarSueldos] = useState(false);
 
   const hojaActiva = hojas.find(h => h.id === hojaActivaId) || hojas[0];
-
-  // --- DETECCIÓN DE TIPO DE PLANTILLA ---
   const esFactura = id?.includes('factura');
 
   // --- FIREBASE SYNC ---
@@ -45,11 +49,10 @@ export default function PlanillaView() {
     const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // Sistema de migración automática si había datos antiguos
         if (data.hojas) {
           setHojas(data.hojas);
         } else if (data.rows) {
-          setHojas([{ id: 'hoja-1', nombre: 'General', rows: data.rows }]);
+          setHojas([{ id: 'hoja-1', nombre: 'General', rows: data.rows, sueldos: [crearFilaSueldo(1)] }]);
         }
       }
     });
@@ -74,10 +77,9 @@ export default function PlanillaView() {
     await setDoc(doc(db, 'planillas', id), { hojas: nuevasHojas }, { merge: true });
   };
 
-  // --- LÓGICA DE DATOS ---
+  // --- LÓGICA DE DATOS PRINCIPAL ---
   const procesarCambios = (nuevasFilas: any[]) => {
     let actualizadas = nuevasFilas.map(fila => {
-      // Calculos solo aplican si es un Balance
       if (!esFactura) {
         const venta = parseInt(fila.ventaNeta) || 0;
         const mat = parseInt(fila.costoMateriales) || 0;
@@ -89,8 +91,7 @@ export default function PlanillaView() {
       return fila;
     });
 
-    const ultimaFila = actualizadas[actualizadas.length - 1];
-    if (ultimaFila && !esFilaVacia(ultimaFila)) {
+    if (actualizadas[actualizadas.length - 1] && !esFilaVacia(actualizadas[actualizadas.length - 1])) {
       actualizadas.push(crearFilaVacia(Math.max(...actualizadas.map(r => r.id)) + 1));
     }
 
@@ -99,12 +100,25 @@ export default function PlanillaView() {
     guardarEnNube(nuevasHojas);
   };
 
+  // --- LÓGICA DE SUELDOS (MINI-TABLA) ---
+  const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
+    let actualizadas = [...nuevasFilasSueldo];
+    
+    if (actualizadas[actualizadas.length - 1] && !esFilaSueldoVacia(actualizadas[actualizadas.length - 1])) {
+      actualizadas.push(crearFilaSueldo(Math.max(...actualizadas.map(r => r.id)) + 1));
+    }
+
+    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: actualizadas } : h);
+    setHojas(nuevasHojas);
+    guardarEnNube(nuevasHojas);
+  };
+
   // --- LÓGICA DE HOJAS (TABS) ---
   const agregarHoja = () => {
-    const nuevoNombre = prompt('Nombre de la nueva hoja (Ej: Febrero 2026, Sueldos):');
+    const nuevoNombre = prompt('Nombre de la nueva hoja:');
     if (!nuevoNombre) return;
     const nuevaHojaId = `hoja-${Date.now()}`;
-    const nuevasHojas = [...hojas, { id: nuevaHojaId, nombre: nuevoNombre, rows: [crearFilaVacia(1)] }];
+    const nuevasHojas = [...hojas, { id: nuevaHojaId, nombre: nuevoNombre, rows: [crearFilaVacia(1)], sueldos: [crearFilaSueldo(1)] }];
     setHojas(nuevasHojas);
     setHojaActivaId(nuevaHojaId);
     guardarEnNube(nuevasHojas);
@@ -136,7 +150,6 @@ export default function PlanillaView() {
     let classes = row.format?.[columnKey] || ''; 
     for (const key in activeUsers) {
       const user = activeUsers[key];
-      // Mostrar cursor solo si estan en la misma hoja
       if (user.activeSheet === hojaActivaId && user.editing && user.editing.row === row.id && user.editing.column === columnKey) {
         classes += ` ring-2 ring-inset z-10 relative ${obtenerColorUsuario(user.name).border}`;
       }
@@ -144,7 +157,7 @@ export default function PlanillaView() {
     return classes;
   };
 
-  // --- COLUMNAS DINÁMICAS (DEPENDIENDO SI ES FACTURA O BALANCE) ---
+  // --- COLUMNAS ---
   const columnasBase = useMemo(() => {
     if (esFactura) {
       return [
@@ -181,10 +194,23 @@ export default function PlanillaView() {
     }
   }, [activeUsers, hojas, hojaActivaId]);
 
-  // --- IMPORTACIÓN ARREGLADA (FECHAS Y FORMATOS) ---
+  const columnasSueldos = [
+    { key: 'id', name: 'N°', width: 60 },
+    { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: renderTextEditor, width: 250 },
+    { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: renderTextEditor, width: 150 },
+    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: renderTextEditor, width: 150 }
+  ];
+
+  // --- IMPORTACIÓN ARREGLADA (CON PREGUNTA) ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const modoReemplazo = window.confirm(
+      "¿Deseas REEMPLAZAR los datos actuales?\n\n" +
+      "Aceptar (OK) = Se borrará la tabla actual y se pondrán los datos nuevos.\n" +
+      "Cancelar = Los datos nuevos se sumarán al final de la lista actual."
+    );
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -192,10 +218,9 @@ export default function PlanillaView() {
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // raw: false soluciona el problema de las fechas en numeros
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' });
 
-      const filasActuales = hojaActiva.rows.filter((r: any) => !esFilaVacia(r));
+      const filasActuales = modoReemplazo ? [] : hojaActiva.rows.filter((r: any) => !esFilaVacia(r));
       let maxId = filasActuales.length > 0 ? Math.max(...filasActuales.map((r: any) => r.id)) : 0;
 
       const filasImportadas = jsonData.map((row: any) => {
@@ -234,9 +259,15 @@ export default function PlanillaView() {
   };
 
   return (
-    // Se corrigio la altura h-[calc(100vh)] asegurando que flex-1 maneje el scroll interior sin cortar
-    <div className="p-2 h-screen flex flex-col bg-gray-50 overflow-hidden">
+    <div className="p-2 h-screen flex flex-col bg-gray-50 overflow-hidden relative">
       
+      {/* Estilos para forzar BORDES TIPO EXCEL (Visible cells) */}
+      <style>{`
+        .rdg { --rdg-border-color: #d1d5db; }
+        .rdg-cell { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
+        .rdg-header-cell { background-color: #f3f4f6; border-bottom: 2px solid #9ca3af; font-weight: bold; color: #374151; }
+      `}</style>
+
       {/* Barra de Herramientas Superior */}
       <div className="flex items-center gap-4 mb-2 px-2 shrink-0">
         <Link to="/dashboard" className="text-gray-500 hover:text-gray-800">
@@ -258,6 +289,16 @@ export default function PlanillaView() {
           <Upload size={16} /> Importar
         </button>
 
+        {/* Boton para abrir la mini-tabla de sueldos (Solo visible en Balances) */}
+        {!esFactura && (
+          <button 
+            onClick={() => setMostrarSueldos(!mostrarSueldos)} 
+            className="ml-2 flex items-center gap-2 bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-blue-700"
+          >
+            <Calculator size={16} /> Sueldos y Cotizaciones
+          </button>
+        )}
+
         <div className="flex -space-x-2 overflow-hidden ml-auto pr-4">
           {Object.values(activeUsers).map((u: any) => (
             <div key={u.name} title={u.name} className={`inline-flex h-8 w-8 rounded-full ring-2 ring-white items-center justify-center text-xs font-bold text-white ${obtenerColorUsuario(u.name).bg}`}>
@@ -267,42 +308,66 @@ export default function PlanillaView() {
         </div>
       </div>
 
-      {/* SISTEMA DE PESTAÑAS (TABS TIPO EXCEL) */}
-      <div className="flex items-center gap-1 px-2 pb-2 shrink-0 overflow-x-auto">
-        {hojas.map((hoja) => (
-          <button
-            key={hoja.id}
-            onDoubleClick={() => renombrarHoja(hoja.id, hoja.nombre)}
-            onClick={() => setHojaActivaId(hoja.id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-t border-x border-b-0 ${
-              hojaActivaId === hoja.id 
-                ? 'bg-white text-blue-600 border-gray-300 shadow-[0_-2px_4px_rgba(0,0,0,0.05)]' 
-                : 'bg-gray-100 text-gray-500 border-transparent hover:bg-gray-200'
-            }`}
-          >
-            <FileSpreadsheet size={16} />
-            {hoja.nombre}
-          </button>
-        ))}
-        <button onClick={agregarHoja} className="flex items-center justify-center w-8 h-8 ml-2 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800" title="Nueva Hoja">
-          <Plus size={18} />
-        </button>
-      </div>
+      {/* MINI-TABLA FLOTANTE DE SUELDOS */}
+      {mostrarSueldos && !esFactura && (
+        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-blue-200 shadow-2xl rounded-lg w-[650px] h-[400px] flex flex-col overflow-hidden">
+          <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex justify-between items-center shrink-0">
+            <h2 className="font-bold text-blue-800 flex items-center gap-2">
+              <Calculator size={18} /> Sueldos y Cotizaciones ({hojaActiva.nombre})
+            </h2>
+            <button onClick={() => setMostrarSueldos(false)} className="text-gray-500 hover:text-red-500">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto bg-white">
+             <DataGrid 
+                columns={columnasSueldos} 
+                rows={hojaActiva.sueldos || [crearFilaSueldo(1)]} 
+                onRowsChange={procesarCambiosSueldos}
+                rowKeyGetter={(row: any) => row.id}
+                className="h-full w-full"
+              />
+          </div>
+        </div>
+      )}
       
-      {/* Contenedor de la Tabla Extendida con scroll interno solucionado */}
-      <div className="flex-1 bg-white border border-gray-300 shadow-sm relative overflow-hidden flex flex-col">
+      {/* Contenedor de la Tabla Extendida (Datos principales) */}
+      <div className="flex-1 bg-white border border-gray-300 shadow-sm relative overflow-hidden flex flex-col rounded-t-lg">
         <div className="flex-1 overflow-auto">
           <DataGrid 
             columns={columnasBase} 
             rows={hojaActiva.rows} 
             onRowsChange={procesarCambios}
             onCellClick={handleCellClick}
-            rowKeyGetter={(row: any) => row.id} // <--- Adicione o ": any" aqui
+            rowKeyGetter={(row: any) => row.id}
             className="h-full w-full"
             style={{ height: '100%' }}
           />
         </div>
       </div>
+
+      {/* SISTEMA DE PESTAÑAS (TABS ABAJO) */}
+      <div className="flex items-center gap-1 pt-1 shrink-0 overflow-x-auto bg-gray-50">
+        {hojas.map((hoja) => (
+          <button
+            key={hoja.id}
+            onDoubleClick={() => renombrarHoja(hoja.id, hoja.nombre)}
+            onClick={() => setHojaActivaId(hoja.id)}
+            className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-b-lg border-x border-b border-t-0 shadow-sm transition-colors ${
+              hojaActivaId === hoja.id 
+                ? 'bg-white text-blue-600 border-gray-300 border-t-2 border-t-blue-500' 
+                : 'bg-gray-200 text-gray-500 border-transparent hover:bg-gray-300'
+            }`}
+          >
+            <FileSpreadsheet size={16} />
+            {hoja.nombre}
+          </button>
+        ))}
+        <button onClick={agregarHoja} className="flex items-center justify-center w-8 h-8 ml-2 rounded text-gray-500 hover:bg-gray-300 hover:text-gray-800" title="Nueva Hoja">
+          <Plus size={18} />
+        </button>
+      </div>
+
     </div>
   );
 }
