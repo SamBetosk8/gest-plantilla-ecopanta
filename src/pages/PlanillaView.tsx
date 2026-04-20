@@ -11,7 +11,6 @@ import 'react-data-grid/lib/styles.css';
 // --- GENERADORES Y AUXILIARES ---
 const crearFilaVacia = (id: number) => ({ id, format: {} });
 
-// NUEVO: Estructura exacta de tu tabla de Sueldos
 const crearFilaSueldo = (id: number) => ({ 
   id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', anticipos: '0', totalDebe: 0, format: {} 
 });
@@ -106,7 +105,6 @@ export default function PlanillaView() {
     guardarEnNube(nuevasHojas);
   };
 
-  // NUEVO: Fórmulas automáticas para Sueldos (Sueldo + Cotización + Anticipo = Total Debe)
   const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
     let actualizadas = nuevasFilasSueldo.map(fila => {
       const s = parseInt(fila.sueldo) || 0;
@@ -114,14 +112,10 @@ export default function PlanillaView() {
       const a = parseInt(fila.anticipos) || 0;
       return {
         ...fila,
-        totalDebe: s + c + a, // Formula Automática
+        totalDebe: s + c + a,
         format: fila.format || {}
       };
     });
-
-    if (actualizadas[actualizadas.length - 1] && !esFilaSueldoVacia(actualizadas[actualizadas.length - 1])) {
-      actualizadas.push(crearFilaSueldo(Math.max(...actualizadas.map(r => r.id)) + 1));
-    }
 
     const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: actualizadas } : h);
     setHojas(nuevasHojas);
@@ -169,8 +163,6 @@ export default function PlanillaView() {
   // --- FORMATO VISUAL ---
   const pintarCelda = (colorClass: string) => {
     if (!celdaSeleccionada) return;
-    
-    // Revisar si estamos pintando la tabla principal o la de sueldos
     const pintarEn = (filas: any[]) => filas.map((fila: any) => {
       if (fila.id === celdaSeleccionada.rowId) {
         return { ...fila, format: { ...fila.format, [celdaSeleccionada.columnKey]: colorClass } };
@@ -180,7 +172,6 @@ export default function PlanillaView() {
 
     const nuevasHojas = hojas.map(h => {
       if (h.id === hojaActivaId) {
-        // Aplica el color a donde sea que haya hecho clic el usuario
         return { ...h, rows: pintarEn(h.rows), sueldos: pintarEn(h.sueldos || []) };
       }
       return h;
@@ -201,7 +192,7 @@ export default function PlanillaView() {
     return classes;
   };
 
-  // --- COLUMNAS ---
+  // --- COLUMNAS PRINCIPALES ---
   const columnasBase = useMemo(() => {
     if (esFactura) {
       return [
@@ -238,7 +229,6 @@ export default function PlanillaView() {
     }
   }, [activeUsers, hojas, hojaActivaId]);
 
-  // NUEVO: Columnas exactas de la tabla de Sueldos
   const columnasSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
     { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
@@ -249,7 +239,7 @@ export default function PlanillaView() {
     { key: 'totalDebe', name: 'TOTAL DEBE', width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalDebe') }
   ], [activeUsers, hojas, hojaActivaId]);
 
-  // --- IMPORTACIÓN ARREGLADA (Detecta encabezados exactos de Sueldos) ---
+  // --- IMPORTACIÓN ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -273,10 +263,8 @@ export default function PlanillaView() {
       let sueldosExtraidos: any[] = [];
       let idSueldoBase = 1000;
 
-      // 1. Escáner para ubicar dónde empiezan las tablas
       for (let i = 0; i < rawData.length; i++) {
         const rowStr = (rawData[i] as string[]).join(' ').toUpperCase();
-        
         if (headerRowIdx === -1 && rowStr.includes('FECHA') && !rowStr.includes('SUELDO LIQUIDO')) {
           if (rowStr.includes('CLIENTE') || rowStr.includes('PROVEEDOR') || rowStr.includes('TRABAJO')) {
             headerRowIdx = i;
@@ -287,13 +275,11 @@ export default function PlanillaView() {
         }
       }
 
-      // 2. Extraer tabla de Sueldos si existe
       if (sueldosHeaderRowIdx !== -1) {
         const sHeaders = (rawData[sueldosHeaderRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
-        
         for (let i = sueldosHeaderRowIdx + 1; i < rawData.length; i++) {
           const rowArr = rawData[i] as string[];
-          if (!rowArr.join('').trim()) continue; // saltar filas vacias
+          if (!rowArr.join('').trim()) continue;
 
           const getSVal = (matchers: string[]) => {
             for(let m of matchers) {
@@ -330,7 +316,6 @@ export default function PlanillaView() {
         return;
       }
 
-      // 3. Extraer Tabla Principal
       const headers = (rawData[headerRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
       const getValue = (rowArr: string[], ...possibleNames: string[]) => {
         for (let name of possibleNames) {
@@ -345,9 +330,7 @@ export default function PlanillaView() {
       const filasImportadas: any[] = [];
 
       for (let i = headerRowIdx + 1; i < rawData.length; i++) {
-        // Evitar procesar las filas que pertenecen a la tabla de sueldos
         if (sueldosHeaderRowIdx !== -1 && i >= sueldosHeaderRowIdx - 1) break; 
-
         const rowArr = rawData[i] as string[];
         if (!rowArr || rowArr.length === 0) continue;
 
@@ -361,16 +344,13 @@ export default function PlanillaView() {
         maxId += 1;
         if (esFactura) {
           filasImportadas.push({
-            id: maxId,
-            fecha: fecha, nFactura: getValue(rowArr, 'FACTURA'), nBoleta: getValue(rowArr, 'BOLETA'),
-            proveedor: proveedor, insumo: trabajo,
-            totalFactura: getValue(rowArr, 'TOTAL FACTURA') || '0', totalBoleta: getValue(rowArr, 'TOTAL BOLETA') || '0',
-            observaciones: getValue(rowArr, 'OBSERVA'), format: {}
+            id: maxId, fecha: fecha, nFactura: getValue(rowArr, 'FACTURA'), nBoleta: getValue(rowArr, 'BOLETA'),
+            proveedor: proveedor, insumo: trabajo, totalFactura: getValue(rowArr, 'TOTAL FACTURA') || '0', 
+            totalBoleta: getValue(rowArr, 'TOTAL BOLETA') || '0', observaciones: getValue(rowArr, 'OBSERVA'), format: {}
           });
         } else {
           filasImportadas.push({
-            id: maxId,
-            fecha: fecha, cliente: cliente, empresa: getValue(rowArr, 'EMPRESA'), ot: getValue(rowArr, 'OT'),
+            id: maxId, fecha: fecha, cliente: cliente, empresa: getValue(rowArr, 'EMPRESA'), ot: getValue(rowArr, 'OT'),
             equipo: getValue(rowArr, 'EQUIPO'), patente: getValue(rowArr, 'PATENTE'), trabajo: trabajo,
             ventaNeta: getValue(rowArr, 'VENTA NETA') || '0', costoMateriales: getValue(rowArr, 'COSTO MATERIALES') || '0',
             costoVarios: getValue(rowArr, 'COSTO VARIOS') || '0', balanceIngreso: 0,
@@ -380,7 +360,6 @@ export default function PlanillaView() {
         }
       }
 
-      // 4. JUNTAR Y GUARDAR
       const nuevasFilas = [...filasActuales, ...filasImportadas];
       const sueldosActuales = modoReemplazo ? [] : (hojaActiva.sueldos || []).filter((s:any) => !esFilaSueldoVacia(s));
       const todosLosSueldos = [...sueldosActuales, ...sueldosExtraidos];
@@ -460,7 +439,7 @@ export default function PlanillaView() {
         </div>
       </div>
 
-      {/* MINI-TABLA FLOTANTE DE SUELDOS (Más ancha para soportar todas las columnas) */}
+      {/* MINI-TABLA FLOTANTE DE SUELDOS */}
       {mostrarSueldos && !esFactura && (
         <div className="absolute top-16 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-lg w-[900px] h-[450px] flex flex-col overflow-hidden">
           <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex justify-between items-center shrink-0">
@@ -476,7 +455,7 @@ export default function PlanillaView() {
               <Plus size={16} /> Agregar Fila
             </button>
           </div>
-          <div className="flex-1 bg-white">
+          <div className="flex-1 bg-white min-h-0">
              <DataGrid 
                 columns={columnasSueldos} 
                 rows={hojaActiva.sueldos || [crearFilaSueldo(1)]} 
@@ -484,13 +463,14 @@ export default function PlanillaView() {
                 onCellClick={handleCellClick}
                 rowKeyGetter={(row: any) => row.id}
                 className="h-full w-full rdg-light"
+                style={{ minHeight: 0 }}
               />
           </div>
         </div>
       )}
       
       {/* Contenedor de la Tabla Principal */}
-      <div className="flex-1 bg-white border border-gray-300 shadow-sm relative overflow-hidden flex flex-col rounded-t-lg">
+      <div className="flex-1 bg-white border border-gray-300 shadow-sm relative flex flex-col rounded-t-lg min-h-0">
         <DataGrid 
           columns={columnasBase} 
           rows={hojaActiva.rows} 
@@ -498,6 +478,7 @@ export default function PlanillaView() {
           onCellClick={handleCellClick}
           rowKeyGetter={(row: any) => row.id}
           className="h-full w-full rdg-light"
+          style={{ minHeight: 0 }}
         />
       </div>
 
