@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Upload, PaintBucket, Plus, FileSpreadsheet, Calculator, X, Edit2 } from 'lucide-react';
-import { DataGrid, renderTextEditor } from 'react-data-grid';
+import { DataGrid, textEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, onValue, set, onDisconnect } from 'firebase/database';
@@ -163,6 +163,7 @@ export default function PlanillaView() {
   // --- FORMATO VISUAL ---
   const pintarCelda = (colorClass: string) => {
     if (!celdaSeleccionada) return;
+    
     const pintarEn = (filas: any[]) => filas.map((fila: any) => {
       if (fila.id === celdaSeleccionada.rowId) {
         return { ...fila, format: { ...fila.format, [celdaSeleccionada.columnKey]: colorClass } };
@@ -192,50 +193,50 @@ export default function PlanillaView() {
     return classes;
   };
 
-  // --- COLUMNAS PRINCIPALES ---
+  // --- COLUMNAS ---
   const columnasBase = useMemo(() => {
     if (esFactura) {
       return [
         { key: 'id', name: 'N°', width: 60, resizable: true },
-        { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
-        { key: 'nFactura', name: 'N° FACTURA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'nFactura') },
-        { key: 'nBoleta', name: 'N° BOLETA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'nBoleta') },
-        { key: 'proveedor', name: 'PROVEEDOR', renderEditCell: renderTextEditor, width: 250, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'proveedor') },
-        { key: 'insumo', name: 'INSUMO / DETALLE', renderEditCell: renderTextEditor, width: 400, minWidth: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'insumo') },
-        { key: 'totalFactura', name: 'TOTAL FACTURA', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalFactura') },
-        { key: 'totalBoleta', name: 'TOTAL BOLETA', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalBoleta') },
-        { key: 'observaciones', name: 'OBSERVACIONES', renderEditCell: renderTextEditor, width: 300, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'observaciones') }
+        { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
+        { key: 'nFactura', name: 'N° FACTURA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'nFactura') },
+        { key: 'nBoleta', name: 'N° BOLETA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'nBoleta') },
+        { key: 'proveedor', name: 'PROVEEDOR', renderEditCell: textEditor, width: 250, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'proveedor') },
+        { key: 'insumo', name: 'INSUMO / DETALLE', renderEditCell: textEditor, width: 400, minWidth: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'insumo') },
+        { key: 'totalFactura', name: 'TOTAL FACTURA', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalFactura') },
+        { key: 'totalBoleta', name: 'TOTAL BOLETA', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalBoleta') },
+        { key: 'observaciones', name: 'OBSERVACIONES', renderEditCell: textEditor, width: 300, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'observaciones') }
       ];
     } else {
       return [
         { key: 'id', name: 'N°', width: 60, resizable: true },
-        { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
-        { key: 'cliente', name: 'CLIENTE', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'cliente') },
-        { key: 'empresa', name: 'EMPRESA', renderEditCell: renderTextEditor, width: 200, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'empresa') },
-        { key: 'ot', name: 'OT', renderEditCell: renderTextEditor, width: 80, minWidth: 80, resizable: true, cellClass: (r: any) => getCellClass(r, 'ot') },
-        { key: 'equipo', name: 'EQUIPO', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'equipo') },
-        { key: 'patente', name: 'PATENTE', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'patente') },
-        { key: 'trabajo', name: 'TRABAJO REALIZADO', renderEditCell: renderTextEditor, width: 350, minWidth: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajo') },
-        { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'ventaNeta') },
-        { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoMateriales') },
-        { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoVarios') },
+        { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
+        { key: 'cliente', name: 'CLIENTE', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'cliente') },
+        { key: 'empresa', name: 'EMPRESA', renderEditCell: textEditor, width: 200, minWidth: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'empresa') },
+        { key: 'ot', name: 'OT', renderEditCell: textEditor, width: 80, minWidth: 80, resizable: true, cellClass: (r: any) => getCellClass(r, 'ot') },
+        { key: 'equipo', name: 'EQUIPO', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'equipo') },
+        { key: 'patente', name: 'PATENTE', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'patente') },
+        { key: 'trabajo', name: 'TRABAJO REALIZADO', renderEditCell: textEditor, width: 350, minWidth: 200, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajo') },
+        { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'ventaNeta') },
+        { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoMateriales') },
+        { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoVarios') },
         { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'balanceIngreso') },
-        { key: 'estatus', name: 'ESTATUS', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'estatus') },
-        { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoNeto') },
+        { key: 'estatus', name: 'ESTATUS', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'estatus') },
+        { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoNeto') },
         { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoIva') },
-        { key: 'factura', name: 'FACTURA', renderEditCell: renderTextEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'factura') },
-        { key: 'fechaPago', name: 'FECHA PAGO', renderEditCell: renderTextEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fechaPago') }
+        { key: 'factura', name: 'FACTURA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'factura') },
+        { key: 'fechaPago', name: 'FECHA PAGO', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fechaPago') }
       ];
     }
   }, [activeUsers, hojas, hojaActivaId]);
 
   const columnasSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
-    { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
-    { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: renderTextEditor, width: 250, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajador') },
-    { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'sueldo') },
-    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cotizacion') },
-    { key: 'anticipos', name: 'ANTICIPOS', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'anticipos') },
+    { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
+    { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: textEditor, width: 250, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajador') },
+    { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'sueldo') },
+    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cotizacion') },
+    { key: 'anticipos', name: 'ANTICIPOS', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'anticipos') },
     { key: 'totalDebe', name: 'TOTAL DEBE', width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalDebe') }
   ], [activeUsers, hojas, hojaActivaId]);
 
