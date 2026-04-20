@@ -10,10 +10,14 @@ import 'react-data-grid/lib/styles.css';
 
 // --- GENERADORES Y AUXILIARES ---
 const crearFilaVacia = (id: number) => ({ id, format: {} });
-const crearFilaSueldo = (id: number) => ({ id, trabajador: '', sueldo: '0', cotizacion: '0' });
+
+// NUEVO: Estructura exacta de tu tabla de Sueldos
+const crearFilaSueldo = (id: number) => ({ 
+  id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', anticipos: '0', totalDebe: 0, format: {} 
+});
 
 const esFilaVacia = (fila: any) => Object.keys(fila).every(k => k === 'id' || k === 'format' || !fila[k] || fila[k] === '0');
-const esFilaSueldoVacia = (fila: any) => !fila.trabajador && (!fila.sueldo || fila.sueldo === '0') && (!fila.cotizacion || fila.cotizacion === '0');
+const esFilaSueldoVacia = (fila: any) => !fila.trabajador && (!fila.sueldo || fila.sueldo === '0') && (!fila.cotizacion || fila.cotizacion === '0') && (!fila.anticipos || fila.anticipos === '0');
 
 const obtenerColorUsuario = (nombre: string) => {
   const paleta = [
@@ -102,8 +106,23 @@ export default function PlanillaView() {
     guardarEnNube(nuevasHojas);
   };
 
+  // NUEVO: Fórmulas automáticas para Sueldos (Sueldo + Cotización + Anticipo = Total Debe)
   const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
-    let actualizadas = [...nuevasFilasSueldo];
+    let actualizadas = nuevasFilasSueldo.map(fila => {
+      const s = parseInt(fila.sueldo) || 0;
+      const c = parseInt(fila.cotizacion) || 0;
+      const a = parseInt(fila.anticipos) || 0;
+      return {
+        ...fila,
+        totalDebe: s + c + a, // Formula Automática
+        format: fila.format || {}
+      };
+    });
+
+    if (actualizadas[actualizadas.length - 1] && !esFilaSueldoVacia(actualizadas[actualizadas.length - 1])) {
+      actualizadas.push(crearFilaSueldo(Math.max(...actualizadas.map(r => r.id)) + 1));
+    }
+
     const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: actualizadas } : h);
     setHojas(nuevasHojas);
     guardarEnNube(nuevasHojas);
@@ -150,13 +169,23 @@ export default function PlanillaView() {
   // --- FORMATO VISUAL ---
   const pintarCelda = (colorClass: string) => {
     if (!celdaSeleccionada) return;
-    const nuevasFilas = hojaActiva.rows.map((fila: any) => {
+    
+    // Revisar si estamos pintando la tabla principal o la de sueldos
+    const pintarEn = (filas: any[]) => filas.map((fila: any) => {
       if (fila.id === celdaSeleccionada.rowId) {
         return { ...fila, format: { ...fila.format, [celdaSeleccionada.columnKey]: colorClass } };
       }
       return fila;
     });
-    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, rows: nuevasFilas } : h);
+
+    const nuevasHojas = hojas.map(h => {
+      if (h.id === hojaActivaId) {
+        // Aplica el color a donde sea que haya hecho clic el usuario
+        return { ...h, rows: pintarEn(h.rows), sueldos: pintarEn(h.sueldos || []) };
+      }
+      return h;
+    });
+    
     setHojas(nuevasHojas);
     guardarEnNube(nuevasHojas);
   };
@@ -172,7 +201,7 @@ export default function PlanillaView() {
     return classes;
   };
 
-  // --- COLUMNAS PRINCIPALES (ANCHOS MEJORADOS) ---
+  // --- COLUMNAS ---
   const columnasBase = useMemo(() => {
     if (esFactura) {
       return [
@@ -209,14 +238,18 @@ export default function PlanillaView() {
     }
   }, [activeUsers, hojas, hojaActivaId]);
 
-  const columnasSueldos = [
+  // NUEVO: Columnas exactas de la tabla de Sueldos
+  const columnasSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
-    { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: renderTextEditor, width: 250, resizable: true },
-    { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: renderTextEditor, width: 150, resizable: true },
-    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: renderTextEditor, width: 150, resizable: true }
-  ];
+    { key: 'fecha', name: 'FECHA', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
+    { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: renderTextEditor, width: 250, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajador') },
+    { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'sueldo') },
+    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: renderTextEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cotizacion') },
+    { key: 'anticipos', name: 'ANTICIPOS', renderEditCell: renderTextEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'anticipos') },
+    { key: 'totalDebe', name: 'TOTAL DEBE', width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalDebe') }
+  ], [activeUsers, hojas, hojaActivaId]);
 
-  // --- IMPORTACIÓN ARREGLADA CON ESCANER DE CABECERAS ---
+  // --- IMPORTACIÓN ARREGLADA (Detecta encabezados exactos de Sueldos) ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -233,55 +266,72 @@ export default function PlanillaView() {
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // Leer todo en formato de matriz cruda para analizar donde están los títulos
       const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
       
       let headerRowIdx = -1;
+      let sueldosHeaderRowIdx = -1;
       let sueldosExtraidos: any[] = [];
       let idSueldoBase = 1000;
 
-      // Escáner de Cabeceras Inteligente y Extractor de Sueldos
+      // 1. Escáner para ubicar dónde empiezan las tablas
       for (let i = 0; i < rawData.length; i++) {
-        const rowArr = rawData[i] as string[];
-        const rowStr = rowArr.join(' ').toUpperCase();
+        const rowStr = (rawData[i] as string[]).join(' ').toUpperCase();
         
-        // Buscar donde empieza la tabla realmente
-        if (headerRowIdx === -1 && rowStr.includes('FECHA')) {
-          headerRowIdx = i;
+        if (headerRowIdx === -1 && rowStr.includes('FECHA') && !rowStr.includes('SUELDO LIQUIDO')) {
+          if (rowStr.includes('CLIENTE') || rowStr.includes('PROVEEDOR') || rowStr.includes('TRABAJO')) {
+            headerRowIdx = i;
+          }
         }
+        if (sueldosHeaderRowIdx === -1 && rowStr.includes('TRABAJADOR') && rowStr.includes('SUELDO')) {
+          sueldosHeaderRowIdx = i;
+        }
+      }
 
-        // Extraer Sueldos
-        if (rowStr.includes('SUELDO')) {
-          const idxSueldo = rowArr.findIndex(c => String(c).toUpperCase().includes('SUELDO'));
-          const idxCotiz = rowArr.findIndex(c => String(c).toUpperCase().includes('COTIZA'));
-          
-          if (i + 1 < rawData.length) {
-            const nextRow = rawData[i + 1] as string[];
-            const valSueldo = idxSueldo !== -1 && nextRow[idxSueldo] ? String(nextRow[idxSueldo]).replace(/[^0-9]/g, '') : '0';
-            const valCotiz = idxCotiz !== -1 && nextRow[idxCotiz] ? String(nextRow[idxCotiz]).replace(/[^0-9]/g, '') : '0';
-            
-            if (valSueldo !== '0' || valCotiz !== '0') {
-              sueldosExtraidos.push({
-                id: idSueldoBase++,
-                trabajador: '',
-                sueldo: valSueldo,
-                cotizacion: valCotiz
-              });
+      // 2. Extraer tabla de Sueldos si existe
+      if (sueldosHeaderRowIdx !== -1) {
+        const sHeaders = (rawData[sueldosHeaderRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
+        
+        for (let i = sueldosHeaderRowIdx + 1; i < rawData.length; i++) {
+          const rowArr = rawData[i] as string[];
+          if (!rowArr.join('').trim()) continue; // saltar filas vacias
+
+          const getSVal = (matchers: string[]) => {
+            for(let m of matchers) {
+              const idx = sHeaders.findIndex(h => h.includes(m));
+              if (idx !== -1 && rowArr[idx]) return String(rowArr[idx]).trim();
             }
+            return '';
+          };
+
+          const trabajador = getSVal(['TRABAJADOR', 'NOMBRE']);
+          const sueldo = getSVal(['SUELDO']).replace(/[^0-9]/g, '');
+          const cotiz = getSVal(['COTIZA']).replace(/[^0-9]/g, '');
+          const anticipos = getSVal(['ANTICIPO']).replace(/[^0-9]/g, '');
+          const fecha = getSVal(['FECHA']);
+
+          if (trabajador || sueldo || cotiz) {
+            sueldosExtraidos.push({
+              id: idSueldoBase++,
+              fecha: fecha,
+              trabajador: trabajador,
+              sueldo: sueldo || '0',
+              cotizacion: cotiz || '0',
+              anticipos: anticipos || '0',
+              totalDebe: (parseInt(sueldo||'0') + parseInt(cotiz||'0') + parseInt(anticipos||'0')),
+              format: {}
+            });
           }
         }
       }
 
       if (headerRowIdx === -1) {
-        alert("No se encontró la columna 'FECHA' en el archivo. El sistema no sabe cómo leerlo.");
+        alert("No se encontró la cabecera principal de la tabla.");
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
-      // Convertir las cabeceras reales a mayúsculas
+      // 3. Extraer Tabla Principal
       const headers = (rawData[headerRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
-      
-      // Función para buscar valores sin importar en que columna esten
       const getValue = (rowArr: string[], ...possibleNames: string[]) => {
         for (let name of possibleNames) {
           const idx = headers.findIndex(h => h.includes(name));
@@ -294,61 +344,43 @@ export default function PlanillaView() {
       let maxId = filasActuales.length > 0 ? Math.max(...filasActuales.map((r: any) => r.id)) : 0;
       const filasImportadas: any[] = [];
 
-      // Procesar datos desde la fila debajo de las cabeceras
       for (let i = headerRowIdx + 1; i < rawData.length; i++) {
+        // Evitar procesar las filas que pertenecen a la tabla de sueldos
+        if (sueldosHeaderRowIdx !== -1 && i >= sueldosHeaderRowIdx - 1) break; 
+
         const rowArr = rawData[i] as string[];
         if (!rowArr || rowArr.length === 0) continue;
-
-        const rowUpper = rowArr.join(' ').toUpperCase();
-        if (rowUpper.includes('SUELDO') || rowUpper.includes('COTIZA')) continue; // Ignorar basura de sueldos
 
         const fecha = getValue(rowArr, 'FECHA');
         const cliente = getValue(rowArr, 'CLIENTE');
         const proveedor = getValue(rowArr, 'PROVEEDOR');
         const trabajo = getValue(rowArr, 'TRABAJO', 'DETALLE', 'INSUMO');
         
-        // Filtro de filas vacías (evita meter filas enteras con puros ceros)
         if (!fecha && !cliente && !proveedor && !trabajo) continue;
 
         maxId += 1;
         if (esFactura) {
           filasImportadas.push({
             id: maxId,
-            fecha: fecha,
-            nFactura: getValue(rowArr, 'FACTURA'),
-            nBoleta: getValue(rowArr, 'BOLETA'),
-            proveedor: proveedor,
-            insumo: trabajo,
-            totalFactura: getValue(rowArr, 'TOTAL FACTURA') || '0', 
-            totalBoleta: getValue(rowArr, 'TOTAL BOLETA') || '0',
-            observaciones: getValue(rowArr, 'OBSERVA'),
-            format: {}
+            fecha: fecha, nFactura: getValue(rowArr, 'FACTURA'), nBoleta: getValue(rowArr, 'BOLETA'),
+            proveedor: proveedor, insumo: trabajo,
+            totalFactura: getValue(rowArr, 'TOTAL FACTURA') || '0', totalBoleta: getValue(rowArr, 'TOTAL BOLETA') || '0',
+            observaciones: getValue(rowArr, 'OBSERVA'), format: {}
           });
         } else {
           filasImportadas.push({
             id: maxId,
-            fecha: fecha,
-            cliente: cliente,
-            empresa: getValue(rowArr, 'EMPRESA'),
-            ot: getValue(rowArr, 'OT'),
-            equipo: getValue(rowArr, 'EQUIPO'),
-            patente: getValue(rowArr, 'PATENTE'),
-            trabajo: trabajo,
-            ventaNeta: getValue(rowArr, 'VENTA NETA') || '0',
-            costoMateriales: getValue(rowArr, 'COSTO MATERIALES') || '0',
-            costoVarios: getValue(rowArr, 'COSTO VARIOS') || '0',
-            balanceIngreso: 0,
-            estatus: getValue(rowArr, 'ESTATUS') || 'PENDIENTE',
-            pagoNeto: getValue(rowArr, 'PAGO NETO') || '0',
-            pagoIva: 0,
-            factura: getValue(rowArr, 'FACTURA'),
-            fechaPago: getValue(rowArr, 'FECHA PAGO', 'FECHA DE PAGO'),
-            format: {}
+            fecha: fecha, cliente: cliente, empresa: getValue(rowArr, 'EMPRESA'), ot: getValue(rowArr, 'OT'),
+            equipo: getValue(rowArr, 'EQUIPO'), patente: getValue(rowArr, 'PATENTE'), trabajo: trabajo,
+            ventaNeta: getValue(rowArr, 'VENTA NETA') || '0', costoMateriales: getValue(rowArr, 'COSTO MATERIALES') || '0',
+            costoVarios: getValue(rowArr, 'COSTO VARIOS') || '0', balanceIngreso: 0,
+            estatus: getValue(rowArr, 'ESTATUS') || 'PENDIENTE', pagoNeto: getValue(rowArr, 'PAGO NETO') || '0', pagoIva: 0,
+            factura: getValue(rowArr, 'FACTURA'), fechaPago: getValue(rowArr, 'FECHA PAGO', 'FECHA DE PAGO'), format: {}
           });
         }
       }
 
-      // 3. JUNTAR TODO Y GUARDAR
+      // 4. JUNTAR Y GUARDAR
       const nuevasFilas = [...filasActuales, ...filasImportadas];
       const sueldosActuales = modoReemplazo ? [] : (hojaActiva.sueldos || []).filter((s:any) => !esFilaSueldoVacia(s));
       const todosLosSueldos = [...sueldosActuales, ...sueldosExtraidos];
@@ -392,7 +424,6 @@ export default function PlanillaView() {
         </Link>
         <h1 className="text-xl font-bold uppercase text-gray-800 mr-2 whitespace-nowrap">{id?.replace('-', ' ')}</h1>
         
-        {/* Herramientas de Edición */}
         <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
           <PaintBucket size={18} className="text-gray-400 mx-2" />
           <button onClick={() => pintarCelda('bg-yellow-100 text-yellow-900')} className="w-6 h-6 rounded bg-yellow-100 border border-yellow-300 hover:scale-110" />
@@ -429,9 +460,9 @@ export default function PlanillaView() {
         </div>
       </div>
 
-      {/* MINI-TABLA FLOTANTE DE SUELDOS */}
+      {/* MINI-TABLA FLOTANTE DE SUELDOS (Más ancha para soportar todas las columnas) */}
       {mostrarSueldos && !esFactura && (
-        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-lg w-[650px] h-[450px] flex flex-col overflow-hidden">
+        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-lg w-[900px] h-[450px] flex flex-col overflow-hidden">
           <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex justify-between items-center shrink-0">
             <h2 className="font-bold text-indigo-800 flex items-center gap-2">
               <Calculator size={18} /> Sueldos y Cotizaciones ({hojaActiva.nombre})
@@ -450,6 +481,7 @@ export default function PlanillaView() {
                 columns={columnasSueldos} 
                 rows={hojaActiva.sueldos || [crearFilaSueldo(1)]} 
                 onRowsChange={procesarCambiosSueldos}
+                onCellClick={handleCellClick}
                 rowKeyGetter={(row: any) => row.id}
                 className="h-full w-full rdg-light"
               />
