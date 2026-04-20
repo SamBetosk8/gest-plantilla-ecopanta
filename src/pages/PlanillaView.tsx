@@ -15,7 +15,7 @@ const crearFilaSueldo = (id: number) => ({
   id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', anticipos: '0', totalDebe: 0, format: {} 
 });
 
-const esFilaVacia = (fila: any) => Object.keys(fila).every(k => k === 'id' || k === 'format' || !fila[k] || fila[k] === '0');
+const esFilaVacia = (fila: any) => Object.keys(fila).every(k => k === 'id' || k === 'format' || !fila[k] || fila[k] === '0' || fila[k] === 0);
 const esFilaSueldoVacia = (fila: any) => !fila.trabajador && (!fila.sueldo || fila.sueldo === '0') && (!fila.cotizacion || fila.cotizacion === '0') && (!fila.anticipos || fila.anticipos === '0');
 
 const obtenerColorUsuario = (nombre: string) => {
@@ -27,6 +27,19 @@ const obtenerColorUsuario = (nombre: string) => {
   let hash = 0;
   for (let i = 0; i < nombre.length; i++) hash += nombre.charCodeAt(i);
   return paleta[hash % paleta.length];
+};
+
+// --- LIMPIEZA DE MONEDAS ---
+const parseCurrency = (val: any) => {
+  if (!val) return 0;
+  const num = parseInt(String(val).replace(/[^0-9-]/g, ''));
+  return isNaN(num) ? 0 : num;
+};
+
+const formatMoney = (val: any) => {
+  const num = parseCurrency(val);
+  if (num === 0) return '$ 0';
+  return `$ ${num.toLocaleString('es-CL')}`;
 };
 
 export default function PlanillaView() {
@@ -82,9 +95,9 @@ export default function PlanillaView() {
   const procesarCambios = (nuevasFilas: any[]) => {
     let actualizadas = nuevasFilas.map(fila => {
       if (!esFactura) {
-        const venta = parseInt(fila.ventaNeta) || 0;
-        const mat = parseInt(fila.costoMateriales) || 0;
-        const varC = parseInt(fila.costoVarios) || 0;
+        const venta = parseCurrency(fila.ventaNeta);
+        const mat = parseCurrency(fila.costoMateriales);
+        const varC = parseCurrency(fila.costoVarios);
         fila.balanceIngreso = venta - mat - varC;
         fila.pagoIva = Math.round(venta * 1.19);
       }
@@ -107,9 +120,9 @@ export default function PlanillaView() {
 
   const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
     let actualizadas = nuevasFilasSueldo.map(fila => {
-      const s = parseInt(fila.sueldo) || 0;
-      const c = parseInt(fila.cotizacion) || 0;
-      const a = parseInt(fila.anticipos) || 0;
+      const s = parseCurrency(fila.sueldo);
+      const c = parseCurrency(fila.cotizacion);
+      const a = parseCurrency(fila.anticipos);
       return {
         ...fila,
         totalDebe: s + c + a,
@@ -220,10 +233,10 @@ export default function PlanillaView() {
         { key: 'ventaNeta', name: 'VENTA NETA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'ventaNeta') },
         { key: 'costoMateriales', name: 'COSTO MATERIALES', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoMateriales') },
         { key: 'costoVarios', name: 'COSTO VARIOS', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'costoVarios') },
-        { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'balanceIngreso') },
+        { key: 'balanceIngreso', name: 'BALANCE INGRESO', width: 150, minWidth: 120, resizable: true, renderCell: (p:any) => formatMoney(p.row.balanceIngreso), cellClass: (r: any) => getCellClass(r, 'balanceIngreso') },
         { key: 'estatus', name: 'ESTATUS', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'estatus') },
         { key: 'pagoNeto', name: 'PAGO NETO', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoNeto') },
-        { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'pagoIva') },
+        { key: 'pagoIva', name: 'TOTAL (C/ IVA)', width: 150, minWidth: 120, resizable: true, renderCell: (p:any) => formatMoney(p.row.pagoIva), cellClass: (r: any) => getCellClass(r, 'pagoIva') },
         { key: 'factura', name: 'FACTURA', renderEditCell: textEditor, width: 120, minWidth: 100, resizable: true, cellClass: (r: any) => getCellClass(r, 'factura') },
         { key: 'fechaPago', name: 'FECHA PAGO', renderEditCell: textEditor, width: 150, minWidth: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fechaPago') }
       ];
@@ -237,18 +250,18 @@ export default function PlanillaView() {
     { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'sueldo') },
     { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cotizacion') },
     { key: 'anticipos', name: 'ANTICIPOS', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'anticipos') },
-    { key: 'totalDebe', name: 'TOTAL DEBE', width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'totalDebe') }
+    { key: 'totalDebe', name: 'TOTAL DEBE', width: 150, resizable: true, renderCell: (p:any) => formatMoney(p.row.totalDebe), cellClass: (r: any) => getCellClass(r, 'totalDebe') }
   ], [activeUsers, hojas, hojaActivaId]);
 
-  // --- IMPORTACIÓN ---
+  // --- IMPORTACIÓN INTELIGENTE ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const modoReemplazo = window.confirm(
       "¿Deseas REEMPLAZAR los datos actuales?\n\n" +
-      "Aceptar (OK) = Borrará todo y pondrá los datos nuevos.\n" +
-      "Cancelar = Agregará los datos nuevos al final de la tabla."
+      "Aceptar (OK) = Borrará todo y pondrá los datos nuevos limpios.\n" +
+      "Cancelar = Sumará los datos nuevos abajo de los que ya existen."
     );
 
     const reader = new FileReader();
@@ -259,26 +272,35 @@ export default function PlanillaView() {
       
       const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
       
-      let headerRowIdx = -1;
-      let sueldosHeaderRowIdx = -1;
-      let sueldosExtraidos: any[] = [];
-      let idSueldoBase = 1000;
+      let mainTableStart = -1;
+      let mainTableEnd = rawData.length;
+      let sueldosTableStart = -1;
 
+      // 1. Ubicar Tablas
       for (let i = 0; i < rawData.length; i++) {
         const rowStr = (rawData[i] as string[]).join(' ').toUpperCase();
-        if (headerRowIdx === -1 && rowStr.includes('FECHA') && !rowStr.includes('SUELDO LIQUIDO')) {
-          if (rowStr.includes('CLIENTE') || rowStr.includes('PROVEEDOR') || rowStr.includes('TRABAJO')) {
-            headerRowIdx = i;
+        
+        if (mainTableStart === -1 && (rowStr.includes('FECHA') || rowStr.includes('CLIENTE') || rowStr.includes('PROVEEDOR') || rowStr.includes('FACTURA'))) {
+          if (rowStr.includes('EMPRESA') || rowStr.includes('TRABAJO') || rowStr.includes('DETALLE') || rowStr.includes('TOTAL')) {
+            mainTableStart = i;
           }
         }
-        if (sueldosHeaderRowIdx === -1 && rowStr.includes('TRABAJADOR') && rowStr.includes('SUELDO')) {
-          sueldosHeaderRowIdx = i;
+
+        if (sueldosTableStart === -1 && (rowStr.includes('TRABAJADOR') || rowStr.includes('NOMBRE') || rowStr.includes('EMPLEADO'))) {
+          if (rowStr.includes('SUELDO') || rowStr.includes('LIQUIDO') || rowStr.includes('LÍQUIDO') || rowStr.includes('COTIZA') || rowStr.includes('ANTICIPO')) {
+            sueldosTableStart = i;
+            if (mainTableStart !== -1 && i > mainTableStart) mainTableEnd = Math.min(mainTableEnd, i);
+          }
         }
       }
 
-      if (sueldosHeaderRowIdx !== -1) {
-        const sHeaders = (rawData[sueldosHeaderRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
-        for (let i = sueldosHeaderRowIdx + 1; i < rawData.length; i++) {
+      // 2. Extraer Sueldos (Separados)
+      let sueldosExtraidos: any[] = [];
+      let idSueldoBase = 1000;
+
+      if (sueldosTableStart !== -1) {
+        const sHeaders = (rawData[sueldosTableStart] as string[]).map(h => String(h).trim().toUpperCase());
+        for (let i = sueldosTableStart + 1; i < rawData.length; i++) {
           const rowArr = rawData[i] as string[];
           if (!rowArr.join('').trim()) continue;
 
@@ -290,34 +312,39 @@ export default function PlanillaView() {
             return '';
           };
 
-          const trabajador = getSVal(['TRABAJADOR', 'NOMBRE']);
-          const sueldo = getSVal(['SUELDO']).replace(/[^0-9]/g, '');
-          const cotiz = getSVal(['COTIZA']).replace(/[^0-9]/g, '');
-          const anticipos = getSVal(['ANTICIPO']).replace(/[^0-9]/g, '');
+          const trabajador = getSVal(['TRABAJADOR', 'NOMBRE', 'EMPLEADO']);
+          const sueldo = getSVal(['SUELDO', 'LIQUIDO', 'LÍQUIDO']);
+          const cotiz = getSVal(['COTIZA', 'PREVISION', 'AFP']);
+          const anticipos = getSVal(['ANTICIPO', 'VALE']);
           const fecha = getSVal(['FECHA']);
 
-          if (trabajador || sueldo || cotiz) {
+          const sNum = parseCurrency(sueldo);
+          const cNum = parseCurrency(cotiz);
+          const aNum = parseCurrency(anticipos);
+
+          if (trabajador || sNum > 0 || cNum > 0 || aNum > 0) {
             sueldosExtraidos.push({
               id: idSueldoBase++,
-              fecha: fecha,
-              trabajador: trabajador,
+              fecha: fecha || '',
+              trabajador: trabajador || '',
               sueldo: sueldo || '0',
               cotizacion: cotiz || '0',
               anticipos: anticipos || '0',
-              totalDebe: (parseInt(sueldo||'0') + parseInt(cotiz||'0') + parseInt(anticipos||'0')),
+              totalDebe: sNum + cNum + aNum,
               format: {}
             });
           }
         }
       }
 
-      if (headerRowIdx === -1) {
+      if (mainTableStart === -1) {
         alert("No se encontró la cabecera principal de la tabla.");
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
-      const headers = (rawData[headerRowIdx] as string[]).map(h => String(h).trim().toUpperCase());
+      // 3. Extraer Tabla Principal
+      const headers = (rawData[mainTableStart] as string[]).map(h => String(h).trim().toUpperCase());
       const getValue = (rowArr: string[], ...possibleNames: string[]) => {
         for (let name of possibleNames) {
           const idx = headers.findIndex(h => h.includes(name));
@@ -330,10 +357,12 @@ export default function PlanillaView() {
       let maxId = filasActuales.length > 0 ? Math.max(...filasActuales.map((r: any) => r.id)) : 0;
       const filasImportadas: any[] = [];
 
-      for (let i = headerRowIdx + 1; i < rawData.length; i++) {
-        if (sueldosHeaderRowIdx !== -1 && i >= sueldosHeaderRowIdx - 1) break; 
+      for (let i = mainTableStart + 1; i < mainTableEnd; i++) {
         const rowArr = rawData[i] as string[];
         if (!rowArr || rowArr.length === 0) continue;
+
+        const rowStr = rowArr.join(' ').toUpperCase();
+        if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) continue;
 
         const fecha = getValue(rowArr, 'FECHA');
         const cliente = getValue(rowArr, 'CLIENTE');
@@ -350,17 +379,20 @@ export default function PlanillaView() {
             totalBoleta: getValue(rowArr, 'TOTAL BOLETA') || '0', observaciones: getValue(rowArr, 'OBSERVA'), format: {}
           });
         } else {
+          const vNeta = getValue(rowArr, 'VENTA NETA') || '0';
+          const cMat = getValue(rowArr, 'COSTO MATERIALES') || '0';
+          const cVar = getValue(rowArr, 'COSTO VARIOS') || '0';
           filasImportadas.push({
             id: maxId, fecha: fecha, cliente: cliente, empresa: getValue(rowArr, 'EMPRESA'), ot: getValue(rowArr, 'OT'),
             equipo: getValue(rowArr, 'EQUIPO'), patente: getValue(rowArr, 'PATENTE'), trabajo: trabajo,
-            ventaNeta: getValue(rowArr, 'VENTA NETA') || '0', costoMateriales: getValue(rowArr, 'COSTO MATERIALES') || '0',
-            costoVarios: getValue(rowArr, 'COSTO VARIOS') || '0', balanceIngreso: 0,
-            estatus: getValue(rowArr, 'ESTATUS') || 'PENDIENTE', pagoNeto: getValue(rowArr, 'PAGO NETO') || '0', pagoIva: 0,
+            ventaNeta: vNeta, costoMateriales: cMat, costoVarios: cVar, balanceIngreso: parseCurrency(vNeta) - parseCurrency(cMat) - parseCurrency(cVar),
+            estatus: getValue(rowArr, 'ESTATUS') || 'PENDIENTE', pagoNeto: getValue(rowArr, 'PAGO NETO') || '0', pagoIva: Math.round(parseCurrency(vNeta) * 1.19),
             factura: getValue(rowArr, 'FACTURA'), fechaPago: getValue(rowArr, 'FECHA PAGO', 'FECHA DE PAGO'), format: {}
           });
         }
       }
 
+      // 4. JUNTAR Y GUARDAR
       const nuevasFilas = [...filasActuales, ...filasImportadas];
       const sueldosActuales = modoReemplazo ? [] : (hojaActiva.sueldos || []).filter((s:any) => !esFilaSueldoVacia(s));
       const todosLosSueldos = [...sueldosActuales, ...sueldosExtraidos];
