@@ -8,7 +8,7 @@ import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'react-data-grid/lib/styles.css';
 
-// --- UTILIDADES BÁSICAS ---
+// --- UTILIDADES ---
 const crearFilaVacia = (id: number) => ({ id, format: {} });
 const crearFilaSueldo = (id: number) => ({ id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', format: {} });
 const crearFilaGasto = (id: number, tipo: string = 'Oficina') => ({ id, tipo, detalle: '', monto: '0', format: {} });
@@ -24,7 +24,6 @@ const formatMoney = (val: any) => {
   return num === 0 ? '$ 0' : `$ ${num.toLocaleString('es-CL')}`;
 };
 
-// LECTOR DE FECHAS ESTRICTO A DD-MM-YYYY
 const parseExcelDate = (val: any) => {
   if (!val) return '';
   let str = String(val).trim();
@@ -57,10 +56,10 @@ export default function PlanillaViewBalance() {
   const userName = sessionStorage.getItem('userName') || 'Invitado';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- ESTADOS ---
+  // Estados Base
   const [hojas, setHojas] = useState<any[]>([{ 
     id: 'hoja-1', nombre: 'Mes 1', rows: [crearFilaVacia(1)], 
-    sueldos: [crearFilaSueldo(1)], gastos: [crearFilaGasto(1, 'Oficina')], 
+    sueldos: [crearFilaSueldo(1)], gastosOficina: [crearFilaGasto(1, 'Oficina')], gastosFijos: [crearFilaGasto(2, 'Fijo')], 
     balanceGeneral: 0 
   }]);
   
@@ -68,10 +67,20 @@ export default function PlanillaViewBalance() {
   const [activeUsers, setActiveUsers] = useState<any>({});
   const [celdaSeleccionada, setCeldaSeleccionada] = useState<{rowId: number, columnKey: string} | null>(null);
   
-  // Modales
-  const [mostrarModalSecundario, setMostrarModalSecundario] = useState(false);
+  // Modales Separados
+  const [mostrarSueldos, setMostrarSueldos] = useState(false);
+  const [mostrarGastos, setMostrarGastos] = useState(false);
 
   const hojaActiva = hojas.find(h => h.id === hojaActivaId) || hojas[0];
+
+  // Totales Calculados en Vivo desde las mini-tablas
+  const totalOficina = useMemo(() => {
+    return (hojaActiva.gastosOficina || []).reduce((sum: number, g: any) => sum + parseCurrency(g.monto), 0);
+  }, [hojaActiva.gastosOficina]);
+
+  const totalFijos = useMemo(() => {
+    return (hojaActiva.gastosFijos || []).reduce((sum: number, g: any) => sum + parseCurrency(g.monto), 0);
+  }, [hojaActiva.gastosFijos]);
 
   // --- FIREBASE SYNC ---
   useEffect(() => {
@@ -111,12 +120,17 @@ export default function PlanillaViewBalance() {
     setHojas(nh); guardarEnNube(nh);
   };
 
-  const procesarGastos = (nuevasFilas: any[]) => {
-    const nh = hojas.map(h => h.id === hojaActivaId ? { ...h, gastos: nuevasFilas } : h);
+  const procesarGastosOficina = (nuevasFilas: any[]) => {
+    const nh = hojas.map(h => h.id === hojaActivaId ? { ...h, gastosOficina: nuevasFilas } : h);
     setHojas(nh); guardarEnNube(nh);
   };
 
-  const agregarFila = (tipo: 'main' | 'sueldo' | 'gasto') => {
+  const procesarGastosFijos = (nuevasFilas: any[]) => {
+    const nh = hojas.map(h => h.id === hojaActivaId ? { ...h, gastosFijos: nuevasFilas } : h);
+    setHojas(nh); guardarEnNube(nh);
+  };
+
+  const agregarFila = (tipo: 'main' | 'sueldo' | 'oficina' | 'fijo') => {
     let nh = [...hojas];
     const idx = nh.findIndex(h => h.id === hojaActivaId);
     
@@ -126,9 +140,12 @@ export default function PlanillaViewBalance() {
     } else if (tipo === 'sueldo') {
       const maxId = (nh[idx].sueldos||[]).length > 0 ? Math.max(...(nh[idx].sueldos||[]).map((r:any) => r.id)) : 0;
       nh[idx].sueldos = [...(nh[idx].sueldos||[]), crearFilaSueldo(maxId + 1)];
-    } else if (tipo === 'gasto') {
-      const maxId = (nh[idx].gastos||[]).length > 0 ? Math.max(...(nh[idx].gastos||[]).map((r:any) => r.id)) : 0;
-      nh[idx].gastos = [...(nh[idx].gastos||[]), crearFilaGasto(maxId + 1, 'Oficina')];
+    } else if (tipo === 'oficina') {
+      const maxId = (nh[idx].gastosOficina||[]).length > 0 ? Math.max(...(nh[idx].gastosOficina||[]).map((r:any) => r.id)) : 0;
+      nh[idx].gastosOficina = [...(nh[idx].gastosOficina||[]), crearFilaGasto(maxId + 1, 'Oficina')];
+    } else if (tipo === 'fijo') {
+      const maxId = (nh[idx].gastosFijos||[]).length > 0 ? Math.max(...(nh[idx].gastosFijos||[]).map((r:any) => r.id)) : 0;
+      nh[idx].gastosFijos = [...(nh[idx].gastosFijos||[]), crearFilaGasto(maxId + 1, 'Fijo')];
     }
     
     setHojas(nh); guardarEnNube(nh);
@@ -137,7 +154,7 @@ export default function PlanillaViewBalance() {
   const agregarHoja = () => {
     const nuevoNombre = prompt('Nombre de la nueva hoja:'); if (!nuevoNombre) return;
     const nuevaHojaId = `hoja-${Date.now()}`;
-    const nuevasHojas = [...hojas, { id: nuevaHojaId, nombre: nuevoNombre, rows: [crearFilaVacia(1)], sueldos: [crearFilaSueldo(1)], gastos: [crearFilaGasto(1, 'Oficina')], balanceGeneral: 0 }];
+    const nuevasHojas = [...hojas, { id: nuevaHojaId, nombre: nuevoNombre, rows: [crearFilaVacia(1)], sueldos: [crearFilaSueldo(1)], gastosOficina: [crearFilaGasto(1, 'Oficina')], gastosFijos: [crearFilaGasto(2, 'Fijo')], balanceGeneral: 0 }];
     setHojas(nuevasHojas); setHojaActivaId(nuevaHojaId); guardarEnNube(nuevasHojas);
   };
 
@@ -170,7 +187,7 @@ export default function PlanillaViewBalance() {
         const worksheet = workbook.Sheets[sheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
         
-        let hojaObj = { id: `hoja-${Date.now()}-${sheetIndex}`, nombre: sheetName, rows: [] as any[], sueldos: [] as any[], gastos: [] as any[], balanceGeneral: 0 };
+        let hojaObj = { id: `hoja-${Date.now()}-${sheetIndex}`, nombre: sheetName, rows: [] as any[], sueldos: [] as any[], gastosOficina: [] as any[], gastosFijos: [] as any[], balanceGeneral: 0 };
         
         let estado = 'IDLE'; 
         let leftMode = 'SUELDOS'; 
@@ -198,12 +215,11 @@ export default function PlanillaViewBalance() {
             continue;
           }
 
-          // 2. Extraer Filas
+          // 2. Extraer Filas de la Principal
           if (estado === 'TABLA_MAIN') {
             const firstCol = String(rowArr[idxFecha] || '').toUpperCase();
             const vNetaCol = String(rowArr[idxVNeta] || '').toUpperCase();
             
-            // Si detecta un total o que empiezan los sueldos/gastos, cerramos la tabla principal
             if (firstCol.includes('TOTAL') || firstCol.includes('RESUMEN') || vNetaCol.includes('TOTAL') || vNetaCol.includes('SUELDO') || vNetaCol.includes('TRABAJADOR') || vNetaCol.includes('GASTO') || rowStr.includes('BALANCE GENERAL')) {
               estado = 'POST_MAIN';
             } else {
@@ -223,7 +239,7 @@ export default function PlanillaViewBalance() {
             }
           }
 
-          // 3. Extracción de la Parte Inferior (Sueldos y Gastos)
+          // 3. Extracción Separada de Sueldos y Gastos
           if (estado === 'POST_MAIN') {
             
             // --- BLOQUE IZQUIERDO (Sueldos y Gastos de Oficina) ---
@@ -232,32 +248,28 @@ export default function PlanillaViewBalance() {
             let valLeft2 = String(rowArr[idxCVar] || '').trim();
             let upperLeft = textLeft.toUpperCase();
 
-            // Detectores de modo izquierdo
             if (upperLeft === 'SUELDO' || upperLeft === 'TRABAJADOR') {
               leftMode = 'SUELDOS';
               if (upperLeft === 'SUELDO' && rowArr[idxVNeta + 1]) textLeft = String(rowArr[idxVNeta + 1]).trim();
             } else if (upperLeft.includes('GASTO') || upperLeft.includes('OFICINA') || /ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR|SISTEMA|SOFTWARE/i.test(upperLeft)) {
               leftMode = 'GASTOS_OFICINA';
             } else if (upperLeft.includes('TOTAL')) {
-              if (leftMode === 'SUELDOS') leftMode = 'GASTOS_OFICINA_WAIT'; // El total separa sueldos de gastos
+              if (leftMode === 'SUELDOS') leftMode = 'GASTOS_OFICINA_WAIT'; 
               textLeft = ''; 
             }
 
-            // Guardar izquierdo
             if (textLeft !== '' && !upperLeft.includes('TOTAL') && !upperLeft.includes('SUELDO') && !upperLeft.includes('TRABAJADOR')) {
               if (parseCurrency(valLeft1) !== 0 || parseCurrency(valLeft2) !== 0) {
-                
                 if (leftMode === 'SUELDOS') {
-                  // Filtro salvavidas: si es un gasto disfrazado de sueldo por falta de título (Ej: Feb Calama)
                   if (/ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR/i.test(textLeft)) {
                     leftMode = 'GASTOS_OFICINA';
-                    hojaObj.gastos.push({ id: idGastoBase++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
+                    hojaObj.gastosOficina.push({ id: idGastoBase++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
                   } else {
                     hojaObj.sueldos.push({ id: idSueldoBase++, fecha: '', trabajador: textLeft, sueldo: valLeft1, cotizacion: valLeft2, format: {} });
                   }
                 } else {
-                  leftMode = 'GASTOS_OFICINA'; // Desbloquea el Wait
-                  hojaObj.gastos.push({ id: idGastoBase++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
+                  leftMode = 'GASTOS_OFICINA';
+                  hojaObj.gastosOficina.push({ id: idGastoBase++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
                 }
               }
             }
@@ -276,11 +288,11 @@ export default function PlanillaViewBalance() {
             if (textRight !== '' && parseCurrency(valRight) > 0 && !upperRight.includes('TOTAL') && !upperRight.includes('GASTO') && !upperRight.includes('FIJO')) {
               if (rightMode === 'GASTOS_FIJOS' || /LEASING|CREDITO|PRESTAMO|CUOTA/i.test(textRight)) {
                 rightMode = 'GASTOS_FIJOS';
-                hojaObj.gastos.push({ id: idGastoBase++, tipo: 'Fijo', detalle: textRight, monto: valRight, format: {} });
+                hojaObj.gastosFijos.push({ id: idGastoBase++, tipo: 'Fijo', detalle: textRight, monto: valRight, format: {} });
               }
             }
 
-            // --- BALANCE GENERAL (Puede estar en Costo Varios o Balance Ingreso) ---
+            // --- BALANCE GENERAL ---
             let textCVar = String(rowArr[idxCVar] || '').toUpperCase();
             if (textCVar.includes('BALANCE GENERAL') || textCVar.includes('BALANCE  GENERAL')) {
               hojaObj.balanceGeneral = parseCurrency(rowArr[idxBal] || rowArr[idxBal + 1]);
@@ -290,10 +302,10 @@ export default function PlanillaViewBalance() {
           }
         }
 
-        // Evitar tablas vacías
         if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
         if (hojaObj.sueldos.length === 0) hojaObj.sueldos.push(crearFilaSueldo(idSueldoBase++));
-        if (hojaObj.gastos.length === 0) hojaObj.gastos.push(crearFilaGasto(idGastoBase++, 'Oficina'));
+        if (hojaObj.gastosOficina.length === 0) hojaObj.gastosOficina.push(crearFilaGasto(idGastoBase++, 'Oficina'));
+        if (hojaObj.gastosFijos.length === 0) hojaObj.gastosFijos.push(crearFilaGasto(idGastoBase++, 'Fijo'));
         
         hojasExtraidas.push(hojaObj);
       });
@@ -317,7 +329,7 @@ export default function PlanillaViewBalance() {
     if (!celdaSeleccionada) return;
     const pintarEn = (filas: any[]) => filas.map((fila: any) => fila.id === celdaSeleccionada.rowId ? { ...fila, format: { ...fila.format, [celdaSeleccionada.columnKey]: colorClass } } : fila);
     const nh = hojas.map(h => h.id === hojaActivaId ? { 
-      ...h, rows: pintarEn(h.rows), sueldos: pintarEn(h.sueldos||[]), gastos: pintarEn(h.gastos||[]) 
+      ...h, rows: pintarEn(h.rows), sueldos: pintarEn(h.sueldos||[]), gastosOficina: pintarEn(h.gastosOficina||[]), gastosFijos: pintarEn(h.gastosFijos||[]) 
     } : h);
     setHojas(nh); guardarEnNube(nh);
   };
@@ -333,7 +345,7 @@ export default function PlanillaViewBalance() {
     return classes;
   };
 
-  // --- COLUMNAS (TABLAS Y MINI TABLAS) ---
+  // --- COLUMNAS ---
   const colsBase = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
     { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
@@ -356,21 +368,23 @@ export default function PlanillaViewBalance() {
 
   const colsSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
+    { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true },
     { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: textEditor, width: 250, resizable: true },
     { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: textEditor, width: 150, resizable: true },
     { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true }
   ], []);
 
-  const colsGastos = useMemo(() => [
+  const colsGastosOficina = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
-    { key: 'tipo', name: 'TIPO GASTO', renderEditCell: textEditor, width: 120, resizable: true },
-    { key: 'detalle', name: 'DETALLE / CONCEPTO', renderEditCell: textEditor, width: 300, resizable: true },
+    { key: 'detalle', name: 'DETALLE / CONCEPTO', renderEditCell: textEditor, width: 250, resizable: true },
     { key: 'monto', name: 'MONTO', renderEditCell: textEditor, width: 150, resizable: true }
   ], []);
 
-  // Totales dinámicos para los modales
-  const totalOficina = (hojaActiva.gastos || []).filter((g:any) => g.tipo === 'Oficina').reduce((sum:number, g:any) => sum + parseCurrency(g.monto), 0);
-  const totalFijos = (hojaActiva.gastos || []).filter((g:any) => g.tipo === 'Fijo').reduce((sum:number, g:any) => sum + parseCurrency(g.monto), 0);
+  const colsGastosFijos = useMemo(() => [
+    { key: 'id', name: 'N°', width: 60, resizable: true },
+    { key: 'detalle', name: 'DETALLE / CONCEPTO', renderEditCell: textEditor, width: 250, resizable: true },
+    { key: 'monto', name: 'MONTO', renderEditCell: textEditor, width: 150, resizable: true }
+  ], []);
 
   return (
     <div className="p-2 h-screen flex flex-col bg-gray-50 overflow-hidden relative">
@@ -395,8 +409,11 @@ export default function PlanillaViewBalance() {
         <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700"><Upload size={16} /> Importar Balance</button>
 
-        <button onClick={() => setMostrarModalSecundario(!mostrarModalSecundario)} className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-indigo-700">
-          <Calculator size={16} /> Sueldos y Gastos
+        <button onClick={() => { setMostrarSueldos(true); setMostrarGastos(false); }} className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-indigo-700">
+          <Calculator size={16} /> Sueldos
+        </button>
+        <button onClick={() => { setMostrarGastos(true); setMostrarSueldos(false); }} className="flex items-center gap-1 bg-amber-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-amber-700">
+          <Wallet size={16} /> Gastos
         </button>
 
         <div className="flex -space-x-2 ml-auto pr-4">
@@ -406,38 +423,48 @@ export default function PlanillaViewBalance() {
         </div>
       </div>
 
-      {/* --- MODAL UNIFICADO: SUELDOS Y GASTOS --- */}
-      {mostrarModalSecundario && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-xl w-[800px] h-[650px] flex flex-col overflow-hidden">
-          <div className="bg-indigo-50 px-4 py-3 border-b flex justify-between items-center shrink-0">
-            <h2 className="font-bold text-indigo-800 text-lg">Sueldos y Gastos Operativos ({hojaActiva.nombre})</h2>
-            <button onClick={() => setMostrarModalSecundario(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
+      {/* --- MODAL SUELDOS --- */}
+      {mostrarSueldos && (
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-xl w-[700px] h-[400px] flex flex-col overflow-hidden">
+          <div className="bg-indigo-50 px-4 py-2 border-b flex justify-between items-center">
+            <h2 className="font-bold text-indigo-800 text-lg">Sueldos ({hojaActiva.nombre})</h2>
+            <button onClick={() => setMostrarSueldos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
+          </div>
+          <div className="bg-gray-100 p-2 border-b"><button onClick={() => agregarFila('sueldo')} className="bg-indigo-600 text-white px-3 py-1 text-sm rounded hover:bg-indigo-700">Agregar Fila</button></div>
+          <div className="flex-1 min-h-0"><DataGrid columns={colsSueldos} rows={hojaActiva.sueldos || []} onRowsChange={procesarSueldos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
+        </div>
+      )}
+
+      {/* --- MODAL GASTOS (OFICINA Y FIJOS SEPARADOS EN PANTALLA DIVIDIDA) --- */}
+      {mostrarGastos && (
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-amber-200 shadow-2xl rounded-xl w-[900px] h-[500px] flex flex-col overflow-hidden">
+          <div className="bg-amber-50 px-4 py-2 border-b flex justify-between items-center">
+            <h2 className="font-bold text-amber-800 text-lg">Gastos Mensuales ({hojaActiva.nombre})</h2>
+            <button onClick={() => setMostrarGastos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
           </div>
           
-          <div className="flex-1 overflow-auto p-4 bg-gray-50 space-y-6">
-            
-            {/* Sección Sueldos */}
-            <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col h-[260px]">
+          <div className="flex-1 flex overflow-hidden">
+            {/* Lado Izquierdo: Gastos Oficina */}
+            <div className="flex-1 flex flex-col border-r border-gray-200">
               <div className="bg-gray-100 p-2 border-b flex justify-between items-center shrink-0">
-                <span className="font-bold text-sm text-gray-700">1. Nómina de Sueldos</span>
-                <button onClick={() => agregarFila('sueldo')} className="bg-indigo-600 text-white px-2 py-1 text-xs rounded hover:bg-indigo-700"><Plus size={14}/></button>
+                <span className="font-bold text-sm text-gray-700">Gastos Oficina (Total: {formatMoney(totalOficina)})</span>
+                <button onClick={() => agregarFila('oficina')} className="bg-amber-600 text-white px-2 py-1 text-xs rounded hover:bg-amber-700"><Plus size={14}/></button>
               </div>
               <div className="flex-1 min-h-0">
-                <DataGrid columns={colsSueldos} rows={hojaActiva.sueldos || []} onRowsChange={procesarSueldos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
+                <DataGrid columns={colsGastosOficina} rows={hojaActiva.gastosOficina || []} onRowsChange={procesarGastosOficina} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
               </div>
             </div>
 
-            {/* Sección Gastos Unificados */}
-            <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col h-[260px]">
+            {/* Lado Derecho: Gastos Fijos */}
+            <div className="flex-1 flex flex-col">
               <div className="bg-gray-100 p-2 border-b flex justify-between items-center shrink-0">
-                <span className="font-bold text-sm text-gray-700">2. Gastos (Total Oficina: {formatMoney(totalOficina)} | Total Fijos: {formatMoney(totalFijos)})</span>
-                <button onClick={() => agregarFila('gasto')} className="bg-amber-600 text-white px-2 py-1 text-xs rounded hover:bg-amber-700"><Plus size={14}/></button>
+                <span className="font-bold text-sm text-gray-700">Gastos Fijos (Total: {formatMoney(totalFijos)})</span>
+                <button onClick={() => agregarFila('fijo')} className="bg-amber-600 text-white px-2 py-1 text-xs rounded hover:bg-amber-700"><Plus size={14}/></button>
               </div>
               <div className="flex-1 min-h-0">
-                <DataGrid columns={colsGastos} rows={hojaActiva.gastos || []} onRowsChange={procesarGastos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
+                <DataGrid columns={colsGastosFijos} rows={hojaActiva.gastosFijos || []} onRowsChange={procesarGastosFijos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
               </div>
             </div>
-
           </div>
         </div>
       )}
@@ -447,10 +474,12 @@ export default function PlanillaViewBalance() {
         <DataGrid columns={colsBase} rows={hojaActiva.rows} onRowsChange={procesarCambiosMain} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
       </div>
 
-      {/* --- BARRA INFERIOR DE RESUMEN (SOLO BALANCE GENERAL) --- */}
+      {/* --- BARRA INFERIOR DE RESUMEN --- */}
       <div className="bg-gray-800 text-white px-4 py-2 flex gap-8 text-sm shrink-0 shadow-inner items-center">
-        <span className="font-bold text-gray-400 uppercase tracking-widest">Resumen Mensual:</span>
-        <span className="ml-auto">Balance General Extr.: <strong className="text-green-400 ml-1 text-base">{formatMoney(hojaActiva.balanceGeneral)}</strong></span>
+        <span className="font-bold text-gray-400 uppercase tracking-widest">Resumen Calculado:</span>
+        <span>Total Oficina: <strong className="text-yellow-400 ml-1">{formatMoney(totalOficina)}</strong></span>
+        <span>Total Fijos: <strong className="text-red-400 ml-1">{formatMoney(totalFijos)}</strong></span>
+        <span className="ml-auto">Balance General (Importado): <strong className="text-green-400 ml-1 text-base">{formatMoney(hojaActiva.balanceGeneral)}</strong></span>
       </div>
 
       {/* --- PESTAÑAS (TABS EXCEL) --- */}
