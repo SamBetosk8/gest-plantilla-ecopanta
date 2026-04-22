@@ -12,11 +12,11 @@ import 'react-data-grid/lib/styles.css';
 const crearFilaVacia = (id: number) => ({ id, format: {} });
 
 const crearFilaSueldo = (id: number) => ({ 
-  id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', anticipos: '0', totalDebe: 0, format: {} 
+  id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', format: {} 
 });
 
 const esFilaVacia = (fila: any) => Object.keys(fila).every(k => k === 'id' || k === 'format' || !fila[k] || fila[k] === '0' || fila[k] === 0);
-const esFilaSueldoVacia = (fila: any) => !fila.trabajador && (!fila.sueldo || fila.sueldo === '0') && (!fila.cotizacion || fila.cotizacion === '0') && (!fila.anticipos || fila.anticipos === '0');
+const esFilaSueldoVacia = (fila: any) => !fila.trabajador && (!fila.sueldo || fila.sueldo === '0') && (!fila.cotizacion || fila.cotizacion === '0');
 
 const obtenerColorUsuario = (nombre: string) => {
   const paleta = [
@@ -153,27 +153,16 @@ export default function PlanillaView() {
     guardarEnNube(nuevasHojas);
   };
 
-  const agregarFilaManual = () => {
-    const maxId = hojaActiva.rows.length > 0 ? Math.max(...hojaActiva.rows.map((r:any) => r.id)) : 0;
-    const nuevasFilas = [...hojaActiva.rows, crearFilaVacia(maxId + 1)];
-    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, rows: nuevasFilas } : h);
+  const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
+    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: nuevasFilasSueldo } : h);
     setHojas(nuevasHojas);
     guardarEnNube(nuevasHojas);
   };
 
-  const procesarCambiosSueldos = (nuevasFilasSueldo: any[]) => {
-    let actualizadas = nuevasFilasSueldo.map(fila => {
-      const s = parseCurrency(fila.sueldo);
-      const c = parseCurrency(fila.cotizacion);
-      const a = parseCurrency(fila.anticipos);
-      return {
-        ...fila,
-        totalDebe: s + c + a,
-        format: fila.format || {}
-      };
-    });
-
-    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, sueldos: actualizadas } : h);
+  const agregarFilaManual = () => {
+    const maxId = hojaActiva.rows.length > 0 ? Math.max(...hojaActiva.rows.map((r:any) => r.id)) : 0;
+    const nuevasFilas = [...hojaActiva.rows, crearFilaVacia(maxId + 1)];
+    const nuevasHojas = hojas.map(h => h.id === hojaActivaId ? { ...h, rows: nuevasFilas } : h);
     setHojas(nuevasHojas);
     guardarEnNube(nuevasHojas);
   };
@@ -288,21 +277,20 @@ export default function PlanillaView() {
 
   const columnasSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
+    { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
     { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: textEditor, width: 250, resizable: true, cellClass: (r: any) => getCellClass(r, 'trabajador') },
     { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'sueldo') },
-    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cotizacion') },
-    { key: 'anticipos', name: 'ANTICIPOS', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'anticipos') },
-    { key: 'totalDebe', name: 'TOTAL DEBE', width: 150, resizable: true, renderCell: (p:any) => formatMoney(p.row.totalDebe), cellClass: (r: any) => getCellClass(r, 'totalDebe') }
+    { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true, cellClass: (r: any) => getCellClass(r, 'cotizacion') }
   ], [activeUsers, hojas, hojaActivaId]);
 
-  // --- IMPORTACIÓN INTELIGENTE CON COORDENADAS EXACTAS ---
+  // --- IMPORTACIÓN INTELIGENTE CON COORDENADAS EXACTAS Y MULTI-PESTAÑA ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const modoReemplazo = window.confirm(
       "¿Deseas REEMPLAZAR los datos actuales?\n\n" +
-      "Aceptar (OK) = Borrará todo y pondrá los datos nuevos limpios.\n" +
+      "Aceptar (OK) = Borrará todo y pondrá los datos nuevos limpios del Excel.\n" +
       "Cancelar = Sumará los datos nuevos abajo de los que ya existen."
     );
 
@@ -310,170 +298,176 @@ export default function PlanillaView() {
     reader.onload = (evt) => {
       const data = evt.target?.result;
       const workbook = XLSX.read(data, { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
-      
-      let mesesExtraidos: any[] = [];
-      let mesActual: any = null;
-      let estado = 'IDLE'; 
+      let hojasExtraidas: any[] = [];
       let idBase = 1, idSueldoBase = 1000;
-      
-      // Coordenadas de la tabla
-      let idxVNeta = -1, idxCMat = -1, idxCVar = -1, idxBal = -1, idxFecha = -1;
-      let mainHeaders: string[] = [];
 
-      for (let i = 0; i < rawData.length; i++) {
-        const rowArr = rawData[i] as string[];
-        const rowStr = rowArr.join(' ').toUpperCase();
+      // Iterar sobre cada pestaña (hoja) real del archivo Excel
+      workbook.SheetNames.forEach((sheetName, sheetIndex) => {
+        const worksheet = workbook.Sheets[sheetName];
+        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
         
-        if (!rowStr.trim()) continue;
+        let hojaObj = { 
+          id: `hoja-${Date.now()}-${sheetIndex}`, 
+          nombre: sheetName, 
+          rows: [], 
+          sueldos: [], 
+          gastosOficina: 0, 
+          gastosFijos: 0, 
+          balanceGeneral: 0 
+        };
+        
+        let estado = 'IDLE'; 
+        let mainHeaders: string[] = [];
+        let idxVNeta = -1, idxCMat = -1, idxCVar = -1, idxBal = -1, idxFecha = -1;
+        
+        let capOficina = false;
+        let capFijos = false;
 
-        // 1. Detectar Nueva Tabla Principal (Nuevo Mes)
-        if (rowStr.includes('FECHA') && rowStr.includes('VENTA NETA') && rowStr.includes('CLIENTE')) {
-          if (mesActual) mesesExtraidos.push(mesActual);
+        for (let i = 0; i < rawData.length; i++) {
+          const rowArr = rawData[i] as string[];
+          const rowStr = rowArr.join(' ').toUpperCase();
           
-          let nombreMes = `Mes ${mesesExtraidos.length + 1}`;
-          for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
-            const texto = (rawData[j] as string[]).join(' ').trim();
-            if (texto.length > 3 && !texto.toUpperCase().includes('BALANCE')) { nombreMes = texto; break; }
+          if (!rowStr.trim()) continue;
+
+          // 1. Detectar Nueva Tabla Principal
+          if (estado === 'IDLE' && rowStr.includes('FECHA') && rowStr.includes('VENTA NETA') && rowStr.includes('CLIENTE')) {
+            estado = 'TABLA_MAIN';
+            mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
+            idxVNeta = mainHeaders.findIndex(h => h.includes('VENTA NETA'));
+            idxCMat = mainHeaders.findIndex(h => h.includes('COSTO MATERIALES'));
+            idxCVar = mainHeaders.findIndex(h => h.includes('COSTO VARIOS'));
+            idxBal = mainHeaders.findIndex(h => h.includes('BALANCE INGRESO'));
+            idxFecha = mainHeaders.findIndex(h => h.includes('FECHA'));
+            continue;
           }
 
-          mesActual = { id: `hoja-${Date.now()}-${i}`, nombre: nombreMes, rows: [], sueldos: [], gastosOficina: 0, gastosFijos: 0, balanceGeneral: 0 };
-          estado = 'TABLA_MAIN';
-          
-          mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
-          idxVNeta = mainHeaders.findIndex(h => h.includes('VENTA NETA'));
-          idxCMat = mainHeaders.findIndex(h => h.includes('COSTO MATERIALES'));
-          idxCVar = mainHeaders.findIndex(h => h.includes('COSTO VARIOS'));
-          idxBal = mainHeaders.findIndex(h => h.includes('BALANCE INGRESO'));
-          idxFecha = mainHeaders.findIndex(h => h.includes('FECHA'));
-          continue;
-        }
+          // Variables de control de texto en columnas clave
+          let textVNeta = idxVNeta !== -1 && rowArr[idxVNeta] ? String(rowArr[idxVNeta]).toUpperCase().trim() : '';
+          let textBal = idxBal !== -1 && rowArr[idxBal] ? String(rowArr[idxBal]).toUpperCase().trim() : '';
+          let textCVar = idxCVar !== -1 && rowArr[idxCVar] ? String(rowArr[idxCVar]).toUpperCase().trim() : '';
 
-        if (!mesActual) continue;
-
-        // 2. Detectar Variables Fijas (Gastos / Balance General)
-        if (idxVNeta !== -1 && String(rowArr[idxVNeta]).toUpperCase().includes('GASTOS FIJOS OFICINA')) {
-          mesActual.gastosOficina = parseCurrency(rowArr[idxCMat]);
-          estado = 'IDLE'; continue;
-        }
-        if (idxBal !== -1 && String(rowArr[idxBal]).toUpperCase().includes('GASTOS FIJOS')) {
-          mesActual.gastosFijos = parseCurrency(rowArr[idxBal + 1] || rowArr[idxBal]);
-          estado = 'IDLE'; continue;
-        }
-        if (idxCVar !== -1 && String(rowArr[idxCVar]).toUpperCase().includes('BALANCE GENERAL')) {
-          mesActual.balanceGeneral = parseCurrency(rowArr[idxBal]);
-          estado = 'IDLE'; continue;
-        }
-
-        // 3. Detectar inicio de Sueldos (en la columna Venta Neta o si dice Trabajador)
-        if ((idxVNeta !== -1 && String(rowArr[idxVNeta]).toUpperCase().includes('SUELDO')) || rowStr.includes('TRABAJADOR')) {
-          estado = 'TABLA_SUELDOS'; 
-          
-          let trab = String(rowArr[idxVNeta] || '').trim();
-          let sueldo = String(rowArr[idxCMat] || '').trim();
-          let cotiz = String(rowArr[idxCVar] || '').trim();
-          
-          // Si es la fila de títulos y dice "SUELDO", tomamos el nombre del trabajador en la columna siguiente
-          if (trab.toUpperCase() === 'SUELDO') trab = String(rowArr[idxVNeta + 1] || '').trim();
-          
-          if (trab && !trab.toUpperCase().includes('SUELDO') && !trab.toUpperCase().includes('TRABAJADOR')) {
-             mesActual.sueldos.push({
-               id: idSueldoBase++, fecha: '', trabajador: trab, sueldo: sueldo || '0', cotizacion: cotiz || '0', anticipos: '0', totalDebe: parseCurrency(sueldo) + parseCurrency(cotiz), format: {}
-             });
+          // 2. Extraer Gastos Fijos Oficina (En col Venta Neta, hasta "TOTAL")
+          if (textVNeta.includes('GASTOS FIJOS OFICINA') || textVNeta === 'GASTOS OFICINA') {
+             capOficina = true;
           }
-          continue;
-        }
-        
-        // --- GUARDAR FILAS SEGÚN ESTADO ---
-        if (estado === 'TABLA_MAIN') {
-          if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) continue;
+          if (capOficina && textVNeta.includes('TOTAL')) {
+            hojaObj.gastosOficina = parseCurrency(rowArr[idxCMat]);
+            capOficina = false;
+            estado = 'IDLE';
+            continue;
+          }
+
+          // 3. Extraer Gastos Fijos (En col Balance Ingreso, hasta "TOTAL")
+          if (textBal === 'GASTOS FIJOS' || (textBal.includes('GASTOS FIJOS') && !textBal.includes('OFICINA'))) {
+            capFijos = true;
+          }
+          if (capFijos && textBal.includes('TOTAL')) {
+            hojaObj.gastosFijos = parseCurrency(rowArr[idxBal + 1] || rowArr[idxBal] || rowArr[idxBal + 2]);
+            capFijos = false;
+            estado = 'IDLE';
+            continue;
+          }
+
+          // 4. Extraer Balance General (En col Costo Varios, valor en Balance Ingreso)
+          if (textCVar.includes('BALANCE GENERAL') || textCVar.includes('BALANCE  GENERAL')) {
+            hojaObj.balanceGeneral = parseCurrency(rowArr[idxBal] || rowArr[idxBal + 1]);
+            estado = 'IDLE';
+            continue;
+          }
+
+          // 5. Detectar inicio de Sueldos
+          if (textVNeta === 'SUELDO' || textVNeta === 'TRABAJADOR' || rowStr.includes('SUELDO LÍQUIDO')) {
+            estado = 'TABLA_SUELDOS'; 
+            continue;
+          }
           
-          const getValue = (...nombres: string[]) => {
-            for (let name of nombres) {
-              const idx = mainHeaders.findIndex(h => h.includes(name));
-              if (idx !== -1 && rowArr[idx]) return String(rowArr[idx]).trim();
+          // --- GUARDAR FILAS SEGÚN ESTADO ---
+          if (estado === 'TABLA_MAIN') {
+            if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) continue;
+            
+            const getValue = (...nombres: string[]) => {
+              for (let name of nombres) {
+                const idx = mainHeaders.findIndex(h => h.includes(name));
+                if (idx !== -1 && rowArr[idx]) return String(rowArr[idx]).trim();
+              }
+              return '';
+            };
+
+            const vNeta = rowArr[idxVNeta] || '0';
+            const fechaVal = rowArr[idxFecha];
+            const fechaLimpia = parseExcelDate(fechaVal); 
+            const cliente = rowArr[idxFecha + 1] || '';
+            const trab = rowArr[idxFecha + 6] || '';
+            
+            // Ignorar filas vacías
+            if (!fechaLimpia && parseCurrency(vNeta) === 0 && !cliente && !trab) continue;
+
+            if (esFactura) {
+              hojaObj.rows.push({
+                id: idBase++, fecha: fechaLimpia, nFactura: getValue('FACTURA'), nBoleta: getValue('BOLETA'),
+                proveedor: rowArr[idxFecha + 1] || '', insumo: rowArr[idxFecha + 5] || '', totalFactura: getValue('TOTAL FACTURA') || '0', 
+                totalBoleta: getValue('TOTAL BOLETA') || '0', observaciones: getValue('OBSERVA'), format: {}
+              });
+            } else {
+              hojaObj.rows.push({
+                id: idBase++,
+                fecha: fechaLimpia,
+                cliente: rowArr[idxFecha + 1] || '',
+                empresa: rowArr[idxFecha + 2] || '',
+                ot: rowArr[idxFecha + 3] || '',
+                equipo: rowArr[idxFecha + 4] || '',
+                patente: rowArr[idxFecha + 5] || '',
+                trabajo: rowArr[idxFecha + 6] || '',
+                ventaNeta: vNeta,
+                costoMateriales: rowArr[idxCMat] || '0',
+                costoVarios: rowArr[idxCVar] || '0',
+                balanceIngreso: parseCurrency(vNeta) - parseCurrency(rowArr[idxCMat]) - parseCurrency(rowArr[idxCVar]),
+                estatus: rowArr[idxBal + 1] || 'PENDIENTE',
+                pagoNeto: rowArr[idxBal + 2] || '0',
+                pagoIva: Math.round(parseCurrency(vNeta) * 1.19),
+                factura: rowArr[idxBal + 4] || '',
+                fechaPago: parseExcelDate(rowArr[idxBal + 5]),
+                format: {}
+              });
             }
-            return '';
-          };
+          }
 
-          const vNeta = rowArr[idxVNeta] || '0';
-          const fechaVal = rowArr[idxFecha];
-          const fechaLimpia = parseExcelDate(fechaVal); // Transformamos la fecha a DD-MM-YYYY
-          const cliente = rowArr[idxFecha + 1] || '';
-          const trab = rowArr[idxFecha + 6] || '';
-          
-          // Filtro para ignorar filas totalmente vacías
-          if (!fechaLimpia && parseCurrency(vNeta) === 0 && !cliente && !trab) continue;
+          if (estado === 'TABLA_SUELDOS') {
+            let trab = String(rowArr[idxVNeta] || '').trim();
+            let sueldo = String(rowArr[idxCMat] || '0').trim();
+            let cotiz = String(rowArr[idxCVar] || '0').trim();
 
-          if (esFactura) {
-            mesActual.rows.push({
-              id: idBase++, fecha: fechaLimpia, nFactura: getValue('FACTURA'), nBoleta: getValue('BOLETA'),
-              proveedor: rowArr[idxFecha + 1] || '', insumo: rowArr[idxFecha + 5] || '', totalFactura: getValue('TOTAL FACTURA') || '0', 
-              totalBoleta: getValue('TOTAL BOLETA') || '0', observaciones: getValue('OBSERVA'), format: {}
-            });
-          } else {
-            mesActual.rows.push({
-              id: idBase++,
-              fecha: fechaLimpia,
-              cliente: rowArr[idxFecha + 1] || '',
-              empresa: rowArr[idxFecha + 2] || '',
-              ot: rowArr[idxFecha + 3] || '',
-              equipo: rowArr[idxFecha + 4] || '',
-              patente: rowArr[idxFecha + 5] || '',
-              trabajo: rowArr[idxFecha + 6] || '',
-              ventaNeta: vNeta,
-              costoMateriales: rowArr[idxCMat] || '0',
-              costoVarios: rowArr[idxCVar] || '0',
-              balanceIngreso: parseCurrency(vNeta) - parseCurrency(rowArr[idxCMat]) - parseCurrency(rowArr[idxCVar]),
-              estatus: rowArr[idxBal + 1] || 'PENDIENTE',
-              pagoNeto: rowArr[idxBal + 2] || '0',
-              pagoIva: Math.round(parseCurrency(vNeta) * 1.19),
-              factura: rowArr[idxBal + 4] || '',
-              fechaPago: parseExcelDate(rowArr[idxBal + 5]),
+            if (trab.toUpperCase() === 'SUELDO') trab = String(rowArr[idxVNeta + 1] || '').trim();
+            
+            if (!trab && parseCurrency(sueldo) === 0 && parseCurrency(cotiz) === 0) continue;
+            if (trab.toUpperCase().includes('TOTAL')) { estado = 'IDLE'; continue; }
+
+            hojaObj.sueldos.push({
+              id: idSueldoBase++, fecha: '',
+              trabajador: trab,
+              sueldo: sueldo,
+              cotizacion: cotiz,
               format: {}
             });
           }
         }
 
-        if (estado === 'TABLA_SUELDOS') {
-          let trab = String(rowArr[idxVNeta] || '').trim();
-          let sueldo = String(rowArr[idxCMat] || '0').trim();
-          let cotiz = String(rowArr[idxCVar] || '0').trim();
-
-          // El usuario indicó que el trabajador está a la derecha del texto SUELDO
-          if (trab.toUpperCase() === 'SUELDO') trab = String(rowArr[idxVNeta + 1] || '').trim();
-          
-          if (!trab && parseCurrency(sueldo) === 0 && parseCurrency(cotiz) === 0) continue;
-          if (trab.toUpperCase().includes('TOTAL')) { estado = 'IDLE'; continue; }
-
-          mesActual.sueldos.push({
-            id: idSueldoBase++, fecha: '',
-            trabajador: trab,
-            sueldo: sueldo,
-            cotizacion: cotiz,
-            anticipos: '0',
-            totalDebe: parseCurrency(sueldo) + parseCurrency(cotiz),
-            format: {}
-          });
+        // Si la hoja tiene datos válidos, la agregamos a la extracción
+        if (hojaObj.rows.length > 0 || hojaObj.sueldos.length > 0 || hojaObj.balanceGeneral !== 0) {
+           if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
+           if (hojaObj.sueldos.length === 0) hojaObj.sueldos.push(crearFilaSueldo(idSueldoBase++));
+           hojasExtraidas.push(hojaObj);
         }
-      }
+      });
 
-      // Añadir el último mes analizado
-      if (mesActual) mesesExtraidos.push(mesActual);
-
-      if (mesesExtraidos.length > 0) {
-        mesesExtraidos.forEach(m => {
-          if (m.rows.length === 0) m.rows.push(crearFilaVacia(idBase++));
-          if (m.sueldos.length === 0) m.sueldos.push(crearFilaSueldo(idSueldoBase++));
-        });
-        const nuevasHojas = modoReemplazo ? mesesExtraidos : [...hojas, ...mesesExtraidos];
+      if (hojasExtraidas.length > 0) {
+        const nuevasHojas = modoReemplazo ? hojasExtraidas : [...hojas, ...hojasExtraidas];
         setHojas(nuevasHojas);
         setHojaActivaId(nuevasHojas[0].id);
         guardarEnNube(nuevasHojas);
       } else {
-        alert("No se pudo detectar el formato de la tabla. Revisa el Excel.");
+        alert("No se detectó el formato en ninguna hoja del Excel.");
       }
     };
     reader.readAsArrayBuffer(file);
@@ -518,7 +512,7 @@ export default function PlanillaView() {
 
         <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700 whitespace-nowrap">
-          <Upload size={16} /> Importar
+          <Upload size={16} /> Importar Excel
         </button>
 
         {!esFactura && (
@@ -539,12 +533,12 @@ export default function PlanillaView() {
         </div>
       </div>
 
-      {/* MINI-TABLA FLOTANTE DE SUELDOS */}
+      {/* MINI-TABLA FLOTANTE DE SUELDOS (SIN ANTICIPOS NI TOTAL) */}
       {mostrarSueldos && !esFactura && (
-        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-lg w-[900px] h-[450px] flex flex-col overflow-hidden">
+        <div className="absolute top-16 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-lg w-[750px] h-[400px] flex flex-col overflow-hidden">
           <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex justify-between items-center shrink-0">
             <h2 className="font-bold text-indigo-800 flex items-center gap-2">
-              <Calculator size={18} /> Sueldos y Cotizaciones ({hojaActiva.nombre})
+              <Calculator size={18} /> Sueldos ({hojaActiva.nombre})
             </h2>
             <button onClick={() => setMostrarSueldos(false)} className="text-gray-500 hover:text-red-500">
               <X size={20} />
@@ -585,7 +579,7 @@ export default function PlanillaView() {
       {/* --- BARRA DE RESUMEN DE GASTOS --- */}
       {!esFactura && (
         <div className="bg-gray-800 text-white px-4 py-3 flex gap-8 text-sm shrink-0 overflow-x-auto shadow-inner items-center">
-          <span className="font-bold text-gray-400 uppercase tracking-wide">Resumen Mensual:</span>
+          <span className="font-bold text-gray-400 uppercase tracking-wide">Resumen {hojaActiva.nombre}:</span>
           <span className="flex items-center gap-2">Gastos Oficina: <strong className="text-yellow-400 bg-gray-700 px-2 py-1 rounded">{formatMoney(hojaActiva.gastosOficina)}</strong></span>
           <span className="flex items-center gap-2">Gastos Fijos: <strong className="text-red-400 bg-gray-700 px-2 py-1 rounded">{formatMoney(hojaActiva.gastosFijos)}</strong></span>
           <span className="flex items-center gap-2 ml-auto">Balance General: <strong className="text-green-400 bg-gray-700 px-3 py-1.5 rounded text-base">{formatMoney(hojaActiva.balanceGeneral)}</strong></span>

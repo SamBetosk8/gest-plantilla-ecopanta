@@ -2,35 +2,24 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
-import { 
-  FileSpreadsheet, Plus, DollarSign, TrendingUp, 
-  Clock, Search, BarChart3, Building2, 
-  Calendar, Users 
-} from 'lucide-react';
+import { FileSpreadsheet, Plus, BarChart3, Calendar, LayoutDashboard, Search, FileText } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-// --- UTILIDADES DE LIMPIEZA ---
+// --- UTILIDADES ---
 const parseCurrency = (val: any) => {
   if (!val) return 0;
   const num = parseInt(String(val).replace(/[^0-9-]/g, ''));
   return isNaN(num) ? 0 : num;
 };
 
-// NORMALIZADOR DE FECHAS ESTRICTO
+// LECTOR DE FECHAS ESTRICTO (Espera el formato DD-MM-YYYY de la nueva tabla)
 const normalizarFecha = (fechaStr: string) => {
-  if (!fechaStr) return null;
-  let d: Date | null = null;
-
-  // Si viene del nuevo importador con formato exacto (DD-MM-YYYY)
-  if (typeof fechaStr === 'string' && fechaStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
-    const [day, month, year] = fechaStr.split('-');
-    d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-  } else {
-    // Intento genérico si quedó algún dato viejo
-    d = new Date(fechaStr);
-  }
-
-  if (!d || isNaN(d.getTime())) return null;
+  if (!fechaStr || typeof fechaStr !== 'string' || !fechaStr.includes('-')) return null;
+  
+  const [day, month, year] = fechaStr.split('-');
+  const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  
+  if (isNaN(d.getTime())) return null;
 
   const mesesNombres = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const mesKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -54,6 +43,7 @@ export default function Dashboard() {
   
   const userName = localStorage.getItem('userName') || 'Usuario';
 
+  // Sincronizar datos de Firebase
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'planillas'), (snapshot) => {
       setPlanillas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -61,53 +51,44 @@ export default function Dashboard() {
     return () => unsub();
   }, []);
 
+  // Crear nueva planilla
   const crearNuevaPlanilla = async () => {
-    const nombre = prompt('Nombre de la nueva planilla (Ej: balance-calama-2026):');
+    const nombre = prompt('Nombre de la nueva planilla (Ej: Balance Calama):');
     if (nombre) {
       const formattedName = nombre.toLowerCase().replace(/\s+/g, '-');
       await setDoc(doc(db, 'planillas', formattedName), {
-        creado: new Date().toISOString(),
+        creado: new Date().toISOString(), 
         creador: userName,
         hojas: [{ id: 'hoja-1', nombre: 'Hoja 1', rows: [], sueldos: [], gastosOficina: 0, gastosFijos: 0, balanceGeneral: 0 }]
       });
     }
   };
 
-  // --- PROCESAMIENTO CENTRAL DE DATOS ---
-  const { stats, listaEmpresas, datosGrafica } = useMemo(() => {
-    let ingresos = 0; let pendientes = 0; let iva = 0;
+  // Procesamiento de datos para la gráfica
+  const { listaEmpresas, datosGrafica } = useMemo(() => {
     const empresasSet = new Set<string>();
     const agrupado: any = {};
 
     planillas.forEach(p => {
-      // Ignoramos las de facturas para los gráficos de ventas
+      // Ignoramos las de facturas para los gráficos de ventas y balances
       if (p.id.includes('factura')) return;
       
       (p.hojas || []).forEach((h: any) => {
         (h.rows || []).forEach((row: any) => {
           const vNeta = parseCurrency(row.ventaNeta);
-          const vIva = parseCurrency(row.pagoIva);
           const vBalance = parseCurrency(row.balanceIngreso);
           const emp = String(row.empresa || row.cliente || '').trim().toUpperCase();
           
-          // KPIs Globales (Tarjetas de arriba)
-          ingresos += vNeta;
-          iva += vIva;
-          if (String(row.estatus).toUpperCase().includes('PENDIENTE')) pendientes += vNeta;
-
-          // Registrar Empresa si existe
           if (emp) empresasSet.add(emp);
 
-          // Lógica de Gráfica
+          // Extraer fechas y graficar
           const f = normalizarFecha(row.fecha);
           if (f && emp) {
             if (empresaSeleccionada === 'TODAS' || empresaSeleccionada === emp) {
               const key = vistaTiempo === 'MES' ? f.mesKey : f.semanaKey;
               const label = vistaTiempo === 'MES' ? f.mesLabel : f.semanaLabel;
 
-              if (!agrupado[key]) {
-                agrupado[key] = { name: label, sortKey: key, "Venta Neta": 0, "Balance Real": 0 };
-              }
+              if (!agrupado[key]) agrupado[key] = { name: label, sortKey: key, "Venta Neta": 0, "Balance Real": 0 };
               agrupado[key]["Venta Neta"] += vNeta;
               agrupado[key]["Balance Real"] += vBalance;
             }
@@ -116,187 +97,183 @@ export default function Dashboard() {
       });
     });
 
-    // Ordenar barras de la más vieja a la más nueva
+    // Ordenar de la fecha más antigua a la más nueva
     const graficaOrdenada = Object.values(agrupado).sort((a: any, b: any) => a.sortKey.localeCompare(b.sortKey));
-
-    return { 
-      stats: { ingresos, pendientes, iva },
-      listaEmpresas: Array.from(empresasSet).sort(),
-      datosGrafica: graficaOrdenada
-    };
+    return { listaEmpresas: Array.from(empresasSet).sort(), datosGrafica: graficaOrdenada };
   }, [planillas, empresaSeleccionada, vistaTiempo]);
 
   const filteredPlanillas = planillas.filter(p => p.id.includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        
-        {/* HEADER */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-800">Panel de Control</h1>
-          <p className="text-slate-500 text-sm mt-1">Bienvenido de nuevo, {userName}</p>
+    <div className="flex h-screen bg-[#f8fafc]">
+      
+      {/* MENÚ LATERAL (Oculto en móviles) */}
+      <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col">
+        <div className="p-6 border-b border-slate-100">
+          <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
         </div>
+        <nav className="flex-1 p-4 space-y-2">
+          <Link to="/dashboard" className="flex items-center gap-3 bg-green-50 text-green-700 px-4 py-3 rounded-xl font-bold">
+            <LayoutDashboard size={20} /> Dashboard
+          </Link>
+          <a href="#" className="flex items-center gap-3 text-slate-500 hover:bg-slate-50 px-4 py-3 rounded-xl font-medium transition-colors">
+            <FileSpreadsheet size={20} /> Planillas
+          </a>
+        </nav>
+      </div>
 
-        {/* --- 4 OPCIONES PRINCIPALES A PRIMERA VISTA --- */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+      {/* ÁREA PRINCIPAL */}
+      <div className="flex-1 overflow-auto">
+        <div className="p-6 md:p-10 max-w-7xl mx-auto">
           
-          {/* Botón Nueva Planilla */}
-          <button 
-            onClick={crearNuevaPlanilla} 
-            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center gap-4 hover:border-blue-500 hover:shadow-md transition-all group"
-          >
-            <div className="p-4 bg-blue-50 rounded-2xl text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-              <Plus size={28} />
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-10 gap-4">
+            <div>
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight">Panel de Control</h2>
+              <p className="text-slate-500 mt-1 font-medium">Bienvenido, {userName}</p>
             </div>
-            <span className="font-bold text-slate-700 text-lg">Nueva Planilla</span>
-          </button>
-
-          {/* KPI: Ingresos */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center gap-3">
-            <div className="p-3 bg-green-50 rounded-xl text-green-600">
-              <TrendingUp size={24} />
-            </div>
-            <div className="text-center">
-              <span className="block text-xs uppercase tracking-wider text-slate-400 font-bold mb-1">Total Ventas (Global)</span>
-              <span className="text-2xl font-black text-slate-800">${stats.ingresos.toLocaleString('es-CL')}</span>
-            </div>
+            <button onClick={crearNuevaPlanilla} className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm transition-transform active:scale-95">
+              <Plus size={20} /> Nueva Planilla
+            </button>
           </div>
 
-          {/* KPI: Pendientes */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center gap-3">
-            <div className="p-3 bg-amber-50 rounded-xl text-amber-600">
-              <Clock size={24} />
-            </div>
-            <div className="text-center">
-              <span className="block text-xs uppercase tracking-wider text-slate-400 font-bold mb-1">Por Cobrar (Pendiente)</span>
-              <span className="text-2xl font-black text-slate-800">${stats.pendientes.toLocaleString('es-CL')}</span>
-            </div>
-          </div>
-
-          {/* KPI: Empresas */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center justify-center gap-3">
-            <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
-              <Building2 size={24} />
-            </div>
-            <div className="text-center">
-              <span className="block text-xs uppercase tracking-wider text-slate-400 font-bold mb-1">Clientes Activos</span>
-              <span className="text-2xl font-black text-slate-800">{listaEmpresas.length}</span>
-            </div>
-          </div>
-
-        </div>
-
-        {/* --- SECCIÓN DE GRÁFICA ADAPTATIVA --- */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-10">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 border-b border-slate-100 pb-4">
+          {/* --- ACCESOS DIRECTOS (LAS 4 PLANILLAS PRINCIPALES) --- */}
+          <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
             
-            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <BarChart3 size={24} className="text-blue-600" /> Analítica de Resultados
-            </h2>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Filtro Empresa */}
-              <select 
-                value={empresaSeleccionada}
-                onChange={(e) => setEmpresaSeleccionada(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
-              >
-                <option value="TODAS">TODOS LOS CLIENTES (GLOBAL)</option>
-                {listaEmpresas.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-
-              {/* Botones Mes/Semana */}
-              <div className="flex bg-slate-100 p-1.5 rounded-lg border border-slate-200">
-                <button 
-                  onClick={() => setVistaTiempo('MES')}
-                  className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${vistaTiempo === 'MES' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >POR MES</button>
-                <button 
-                  onClick={() => setVistaTiempo('SEMANA')}
-                  className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${vistaTiempo === 'SEMANA' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >POR SEMANA</button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Gráfico */}
-          <div className="h-[380px] w-full">
-            {datosGrafica.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={datosGrafica} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 13, fontWeight: 500}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 13}} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
-                  <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    contentStyle={{borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
-                    formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, '']}
-                  />
-                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                  <Bar dataKey="Venta Neta" name="Venta Neta (Ingreso Bruto)" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={45} />
-                  <Bar dataKey="Balance Real" name="Balance (Ganancia Neta)" fill="#10b981" radius={[4, 4, 0, 0]} barSize={45} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
-                <Calendar size={48} strokeWidth={1} className="opacity-50" />
-                <p className="text-base font-medium">No hay datos de fechas válidas para graficar en esta selección.</p>
-                <p className="text-sm">Asegúrate de haber importado el Excel con fechas correctas.</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* --- LISTADO DE PLANILLAS --- */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-800">Tus Planillas Activas</h2>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Buscar planilla..." 
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all" 
-                onChange={(e) => setSearchTerm(e.target.value)} 
-              />
-            </div>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {filteredPlanillas.map((p) => (
-              <div key={p.id} className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between hover:bg-slate-50 transition-colors gap-4">
-                <div className="flex items-center gap-5">
-                  <div className="w-14 h-14 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-sm border border-blue-100">
-                    <FileSpreadsheet size={28} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-lg uppercase tracking-tight">{p.id.replace(/-/g, ' ')}</h3>
-                    <p className="text-sm text-slate-500 font-medium mt-0.5">
-                      <span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-                      {(p.hojas?.length || 1)} Meses registrados
-                    </p>
-                  </div>
-                </div>
+            {planillas.slice(0, 4).map((p) => {
+              const esFactura = p.id.includes('factura');
+              return (
                 <Link 
+                  key={p.id} 
                   to={`/planilla/${p.id}`} 
-                  className="w-full sm:w-auto text-center px-6 py-2.5 text-sm font-bold text-blue-600 bg-white border border-blue-200 hover:bg-blue-50 hover:border-blue-300 rounded-lg transition-all shadow-sm"
+                  className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-lg transition-all group flex flex-col justify-center items-center gap-5 h-48 relative overflow-hidden"
                 >
-                  Abrir Planilla
+                  {/* Decoración de fondo */}
+                  <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${esFactura ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
+                  
+                  <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 ${esFactura ? 'bg-gradient-to-br from-purple-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
+                    {esFactura ? <FileText size={36} /> : <FileSpreadsheet size={36} />}
+                  </div>
+                  
+                  <div className="text-center z-10">
+                    <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight">{p.id.replace(/-/g, ' ')}</h3>
+                    <span className="px-3 py-1 mt-2 inline-block bg-slate-100 text-slate-500 text-xs font-bold rounded-full">
+                      {p.hojas?.length || 1} Pestañas
+                    </span>
+                  </div>
                 </Link>
-              </div>
-            ))}
-            
-            {filteredPlanillas.length === 0 && (
-              <div className="p-12 text-center text-slate-500">
-                <FileSpreadsheet size={48} className="mx-auto mb-4 opacity-20" />
-                <p className="text-lg font-medium">No se encontraron planillas.</p>
-              </div>
+              );
+            })}
+
+            {/* Tarjeta de relleno si hay menos de 4 planillas */}
+            {planillas.length < 4 && (
+              <button onClick={crearNuevaPlanilla} className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col justify-center items-center gap-3 h-48 hover:bg-slate-100 hover:border-slate-400 transition-colors text-slate-500">
+                <Plus size={32} />
+                <span className="font-bold">Crear Nueva</span>
+              </button>
             )}
           </div>
-        </div>
 
+          {/* --- GRÁFICA ADAPTATIVA --- */}
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 mb-10">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6 border-b border-slate-100 pb-6">
+              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                <div className="p-2 bg-green-50 rounded-lg text-green-600"><BarChart3 size={24} /></div> 
+                Analítica de Ventas
+              </h2>
+              
+              <div className="flex flex-wrap gap-3 w-full lg:w-auto">
+                <select 
+                  value={empresaSeleccionada} 
+                  onChange={(e) => setEmpresaSeleccionada(e.target.value)} 
+                  className="flex-1 lg:flex-none bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="TODAS">TODOS LOS CLIENTES (GLOBAL)</option>
+                  {listaEmpresas.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+                
+                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
+                  <button onClick={() => setVistaTiempo('MES')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'MES' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>MES</button>
+                  <button onClick={() => setVistaTiempo('SEMANA')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'SEMANA' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>SEMANA</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-80 w-full">
+              {datosGrafica.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={datosGrafica}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} dx={-10} />
+                    <Tooltip 
+                      cursor={{fill: '#f8fafc'}} 
+                      contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'}}
+                      formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, '']} 
+                    />
+                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                    <Bar dataKey="Venta Neta" name="Venta Neta (Ingreso)" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={40} />
+                    <Bar dataKey="Balance Real" name="Balance (Ganancia)" fill="#10b981" radius={[6, 6, 0, 0]} barSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3">
+                  <Calendar size={56} className="opacity-30" />
+                  <p className="font-bold text-slate-500">No hay datos de ventas.</p>
+                  <p className="text-sm">Importa un archivo Excel en alguna planilla para ver la gráfica.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* --- BUSCADOR Y LISTA TOTAL DE PLANILLAS --- */}
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-50/50">
+              <h2 className="text-xl font-black text-slate-800">Todas las Planillas</h2>
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input 
+                  type="text" 
+                  placeholder="Buscar planilla por nombre..." 
+                  className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-shadow text-sm font-medium" 
+                  onChange={(e) => setSearchTerm(e.target.value)} 
+                />
+              </div>
+            </div>
+            
+            <div className="divide-y divide-slate-100">
+              {filteredPlanillas.map((p) => (
+                <div key={p.id} className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between hover:bg-slate-50 transition-colors gap-4 group">
+                  <div className="flex items-center gap-5">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${p.id.includes('factura') ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
+                      {p.id.includes('factura') ? <FileText size={26} /> : <FileSpreadsheet size={26} />}
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight group-hover:text-blue-600 transition-colors">{p.id.replace(/-/g, ' ')}</h3>
+                      <p className="text-sm text-slate-500 font-semibold mt-1 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                        {(p.hojas?.length || 1)} Meses registrados
+                      </p>
+                    </div>
+                  </div>
+                  <Link 
+                    to={`/planilla/${p.id}`} 
+                    className="w-full sm:w-auto text-center px-6 py-2.5 text-sm font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 hover:text-slate-800 rounded-xl transition-all shadow-sm"
+                  >
+                    Abrir Planilla
+                  </Link>
+                </div>
+              ))}
+              {filteredPlanillas.length === 0 && (
+                <div className="p-16 text-center text-slate-400">
+                  <FileSpreadsheet size={64} className="mx-auto mb-4 opacity-20" />
+                  <p className="text-xl font-bold text-slate-500">No hay planillas que coincidan.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   );
