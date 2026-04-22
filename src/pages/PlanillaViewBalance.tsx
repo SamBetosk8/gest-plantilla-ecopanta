@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, PaintBucket, Plus, FileSpreadsheet, Calculator, X, Edit2, Building, Landmark } from 'lucide-react';
+import { ArrowLeft, Upload, PaintBucket, Plus, FileSpreadsheet, Calculator, X, Edit2, Wallet } from 'lucide-react';
 import DataGrid, { textEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -68,12 +68,20 @@ export default function PlanillaViewBalance() {
   const [activeUsers, setActiveUsers] = useState<any>({});
   const [celdaSeleccionada, setCeldaSeleccionada] = useState<{rowId: number, columnKey: string} | null>(null);
   
-  // --- MODALES SEPARADOS ---
+  // --- 2 MODALES (SUELDOS y GASTOS) ---
   const [mostrarSueldos, setMostrarSueldos] = useState(false);
-  const [mostrarGastosOficina, setMostrarGastosOficina] = useState(false);
-  const [mostrarGastosFijos, setMostrarGastosFijos] = useState(false);
+  const [mostrarGastos, setMostrarGastos] = useState(false);
 
   const hojaActiva = hojas.find(h => h.id === hojaActivaId) || hojas[0];
+
+  // --- CÁLCULOS EN VIVO PARA LA BARRA INFERIOR ---
+  const totalOficina = useMemo(() => {
+    return (hojaActiva.gastosOficina || []).reduce((sum: number, g: any) => sum + parseCurrency(g.monto), 0);
+  }, [hojaActiva.gastosOficina]);
+
+  const totalFijos = useMemo(() => {
+    return (hojaActiva.gastosFijos || []).reduce((sum: number, g: any) => sum + parseCurrency(g.monto), 0);
+  }, [hojaActiva.gastosFijos]);
 
   // --- FIREBASE SYNC ---
   useEffect(() => {
@@ -165,7 +173,7 @@ export default function PlanillaViewBalance() {
     }
   };
 
-  // --- ESCÁNER INTELIGENTE DE BALANCES ---
+  // --- ESCÁNER INTELIGENTE ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const modoReemplazo = window.confirm("¿Deseas REEMPLAZAR los datos actuales con los del Excel?");
@@ -213,7 +221,7 @@ export default function PlanillaViewBalance() {
             const firstCol = String(rowArr[idxFecha] || '').toUpperCase();
             const vNetaCol = String(rowArr[idxVNeta] || '').toUpperCase();
             
-            // Si detecta un total o que empiezan los sueldos/gastos, cerramos la tabla principal
+            // Fin de la tabla principal
             if (firstCol.includes('TOTAL') || firstCol.includes('RESUMEN') || vNetaCol.includes('TOTAL') || vNetaCol.includes('SUELDO') || vNetaCol.includes('TRABAJADOR') || vNetaCol.includes('GASTO') || rowStr.includes('BALANCE GENERAL')) {
               estado = 'POST_MAIN';
             } else {
@@ -233,32 +241,28 @@ export default function PlanillaViewBalance() {
             }
           }
 
-          // 3. Extracción de la Parte Inferior (Sueldos y Gastos)
+          // 3. Extracción de Sueldos y Gastos (Parte inferior)
           if (estado === 'POST_MAIN') {
             
-            // --- BLOQUE IZQUIERDO (Sueldos y Gastos de Oficina) ---
+            // --- LADO IZQUIERDO ---
             let textLeft = String(rowArr[idxVNeta] || '').trim();
             let valLeft1 = String(rowArr[idxCMat] || '').trim();
             let valLeft2 = String(rowArr[idxCVar] || '').trim();
             let upperLeft = textLeft.toUpperCase();
 
-            // Detectores de modo izquierdo
             if (upperLeft === 'SUELDO' || upperLeft === 'TRABAJADOR') {
               leftMode = 'SUELDOS';
               if (upperLeft === 'SUELDO' && rowArr[idxVNeta + 1]) textLeft = String(rowArr[idxVNeta + 1]).trim();
             } else if (upperLeft.includes('GASTO') || upperLeft.includes('OFICINA') || /ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR|SISTEMA|SOFTWARE/i.test(upperLeft)) {
               leftMode = 'GASTOS_OFICINA';
             } else if (upperLeft.includes('TOTAL')) {
-              if (leftMode === 'SUELDOS') leftMode = 'GASTOS_OFICINA_WAIT'; // El total separa sueldos de gastos
+              if (leftMode === 'SUELDOS') leftMode = 'GASTOS_OFICINA_WAIT'; 
               textLeft = ''; 
             }
 
-            // Guardar izquierdo
             if (textLeft !== '' && !upperLeft.includes('TOTAL') && !upperLeft.includes('SUELDO') && !upperLeft.includes('TRABAJADOR')) {
               if (parseCurrency(valLeft1) !== 0 || parseCurrency(valLeft2) !== 0) {
-                
                 if (leftMode === 'SUELDOS') {
-                  // Filtro salvavidas para Febrero: si es un gasto disfrazado de sueldo
                   if (/ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR/i.test(textLeft) || i >= 71) {
                     leftMode = 'GASTOS_OFICINA';
                     hojaObj.gastosOficina.push({ id: idGastoOficina++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
@@ -266,13 +270,13 @@ export default function PlanillaViewBalance() {
                     hojaObj.sueldos.push({ id: idSueldoBase++, fecha: '', trabajador: textLeft, sueldo: valLeft1, cotizacion: valLeft2, format: {} });
                   }
                 } else {
-                  leftMode = 'GASTOS_OFICINA'; // Desbloquea el Wait
+                  leftMode = 'GASTOS_OFICINA'; 
                   hojaObj.gastosOficina.push({ id: idGastoOficina++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
                 }
               }
             }
 
-            // --- BLOQUE DERECHO (Gastos Fijos) ---
+            // --- LADO DERECHO ---
             let textRight = String(rowArr[idxBal] || '').trim();
             let valRight = String(rowArr[idxBal + 1] || rowArr[idxBal + 2] || '').trim();
             let upperRight = textRight.toUpperCase();
@@ -290,7 +294,7 @@ export default function PlanillaViewBalance() {
               }
             }
 
-            // --- BALANCE GENERAL (Puede estar en Costo Varios o Balance Ingreso) ---
+            // --- BALANCE GENERAL ---
             let textCVar = String(rowArr[idxCVar] || '').toUpperCase();
             if (textCVar.includes('BALANCE GENERAL') || textCVar.includes('BALANCE  GENERAL')) {
               hojaObj.balanceGeneral = parseCurrency(rowArr[idxBal] || rowArr[idxBal + 1]);
@@ -300,7 +304,6 @@ export default function PlanillaViewBalance() {
           }
         }
 
-        // Evitar tablas vacías
         if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
         if (hojaObj.sueldos.length === 0) hojaObj.sueldos.push(crearFilaSueldo(idSueldoBase++));
         if (hojaObj.gastosOficina.length === 0) hojaObj.gastosOficina.push(crearFilaGasto(idGastoOficina++, 'Oficina'));
@@ -318,7 +321,6 @@ export default function PlanillaViewBalance() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // --- CELDAS Y COLORES ---
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
@@ -345,7 +347,7 @@ export default function PlanillaViewBalance() {
     return classes;
   };
 
-  // --- CONFIGURACIÓN DE COLUMNAS ---
+  // --- COLUMNAS ---
   const colsBase = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
     { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
@@ -368,6 +370,7 @@ export default function PlanillaViewBalance() {
 
   const colsSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
+    { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true },
     { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: textEditor, width: 250, resizable: true },
     { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: textEditor, width: 150, resizable: true },
     { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true }
@@ -389,7 +392,7 @@ export default function PlanillaViewBalance() {
     <div className="p-2 h-screen flex flex-col bg-gray-50 overflow-hidden relative">
       <style>{`.rdg { --rdg-border-color: #d1d5db; height: 100%; border: none; } .rdg-cell { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 0 8px; } .rdg-header-cell { background-color: #f3f4f6; border-bottom: 2px solid #9ca3af; font-weight: bold; color: #374151; } `}</style>
 
-      {/* --- TOOLBAR SUPERIOR CON 3 BOTONES SEPARADOS --- */}
+      {/* --- TOOLBAR SUPERIOR --- */}
       <div className="flex items-center gap-2 mb-2 px-2 shrink-0 flex-wrap">
         <Link to="/dashboard" className="text-gray-500 hover:text-gray-800 mr-2"><ArrowLeft size={24} /></Link>
         <h1 className="text-xl font-bold uppercase text-blue-800 mr-2 flex items-center gap-2"><FileSpreadsheet size={20}/> {id?.replace('-', ' ')}</h1>
@@ -408,15 +411,12 @@ export default function PlanillaViewBalance() {
         <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700"><Upload size={16} /> Importar Balance</button>
 
-        {/* LOS 3 BOTONES EXCLUSIVOS */}
-        <button onClick={() => { setMostrarSueldos(true); setMostrarGastosOficina(false); setMostrarGastosFijos(false); }} className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-indigo-700 ml-4">
+        {/* 2 BOTONES COMO ANTES */}
+        <button onClick={() => { setMostrarSueldos(true); setMostrarGastos(false); }} className="flex items-center gap-1 bg-indigo-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-indigo-700 ml-4">
           <Calculator size={16} /> Sueldos
         </button>
-        <button onClick={() => { setMostrarGastosOficina(true); setMostrarSueldos(false); setMostrarGastosFijos(false); }} className="flex items-center gap-1 bg-amber-500 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-amber-600">
-          <Building size={16} /> Gastos Oficina
-        </button>
-        <button onClick={() => { setMostrarGastosFijos(true); setMostrarSueldos(false); setMostrarGastosOficina(false); }} className="flex items-center gap-1 bg-orange-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-orange-700">
-          <Landmark size={16} /> Gastos Fijos
+        <button onClick={() => { setMostrarGastos(true); setMostrarSueldos(false); }} className="flex items-center gap-1 bg-amber-500 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-amber-600">
+          <Wallet size={16} /> Gastos
         </button>
 
         <div className="flex -space-x-2 ml-auto pr-4">
@@ -428,37 +428,49 @@ export default function PlanillaViewBalance() {
 
       {/* --- MODAL 1: SUELDOS --- */}
       {mostrarSueldos && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-xl w-[600px] h-[400px] flex flex-col overflow-hidden">
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-xl w-[700px] h-[400px] flex flex-col overflow-hidden">
           <div className="bg-indigo-50 px-4 py-2 border-b flex justify-between items-center">
             <h2 className="font-bold text-indigo-800 text-lg">Sueldos ({hojaActiva.nombre})</h2>
             <button onClick={() => setMostrarSueldos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
           </div>
           <div className="bg-gray-100 p-2 border-b"><button onClick={() => agregarFila('sueldo')} className="bg-indigo-600 text-white px-3 py-1 text-sm rounded hover:bg-indigo-700">Agregar Fila</button></div>
-          <div className="flex-1 min-h-0"><DataGrid columns={colsSueldos} rows={hojaActiva.sueldos || []} onRowsChange={procesarSueldos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
+          <div className="flex-1 min-h-0">
+            <DataGrid columns={colsSueldos} rows={hojaActiva.sueldos || []} onRowsChange={procesarSueldos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
+          </div>
         </div>
       )}
 
-      {/* --- MODAL 2: GASTOS OFICINA --- */}
-      {mostrarGastosOficina && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-amber-200 shadow-2xl rounded-xl w-[500px] h-[400px] flex flex-col overflow-hidden">
+      {/* --- MODAL 2: GASTOS (DIVIDIDO EN DOS) --- */}
+      {mostrarGastos && (
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-amber-200 shadow-2xl rounded-xl w-[900px] h-[500px] flex flex-col overflow-hidden">
           <div className="bg-amber-50 px-4 py-2 border-b flex justify-between items-center">
-            <h2 className="font-bold text-amber-800 text-lg">Gastos de Oficina ({hojaActiva.nombre})</h2>
-            <button onClick={() => setMostrarGastosOficina(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
+            <h2 className="font-bold text-amber-800 text-lg">Desglose de Gastos ({hojaActiva.nombre})</h2>
+            <button onClick={() => setMostrarGastos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
           </div>
-          <div className="bg-gray-100 p-2 border-b"><button onClick={() => agregarFila('oficina')} className="bg-amber-500 text-white px-3 py-1 text-sm rounded hover:bg-amber-600">Agregar Gasto</button></div>
-          <div className="flex-1 min-h-0"><DataGrid columns={colsGastosOficina} rows={hojaActiva.gastosOficina || []} onRowsChange={procesarGastosOficina} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
-        </div>
-      )}
+          
+          <div className="flex-1 flex overflow-hidden">
+            {/* Lado Izquierdo: Gastos Oficina */}
+            <div className="flex-1 flex flex-col border-r border-gray-200">
+              <div className="bg-gray-100 p-2 border-b flex justify-between items-center shrink-0">
+                <span className="font-bold text-sm text-gray-700">Gastos Oficina (Total: {formatMoney(totalOficina)})</span>
+                <button onClick={() => agregarFila('oficina')} className="bg-amber-600 text-white px-2 py-1 text-xs rounded hover:bg-amber-700"><Plus size={14}/></button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <DataGrid columns={colsGastosOficina} rows={hojaActiva.gastosOficina || []} onRowsChange={procesarGastosOficina} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
+              </div>
+            </div>
 
-      {/* --- MODAL 3: GASTOS FIJOS --- */}
-      {mostrarGastosFijos && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-orange-200 shadow-2xl rounded-xl w-[500px] h-[400px] flex flex-col overflow-hidden">
-          <div className="bg-orange-50 px-4 py-2 border-b flex justify-between items-center">
-            <h2 className="font-bold text-orange-800 text-lg">Gastos Fijos ({hojaActiva.nombre})</h2>
-            <button onClick={() => setMostrarGastosFijos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
+            {/* Lado Derecho: Gastos Fijos */}
+            <div className="flex-1 flex flex-col">
+              <div className="bg-gray-100 p-2 border-b flex justify-between items-center shrink-0">
+                <span className="font-bold text-sm text-gray-700">Gastos Fijos (Total: {formatMoney(totalFijos)})</span>
+                <button onClick={() => agregarFila('fijo')} className="bg-amber-600 text-white px-2 py-1 text-xs rounded hover:bg-amber-700"><Plus size={14}/></button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <DataGrid columns={colsGastosFijos} rows={hojaActiva.gastosFijos || []} onRowsChange={procesarGastosFijos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
+              </div>
+            </div>
           </div>
-          <div className="bg-gray-100 p-2 border-b"><button onClick={() => agregarFila('fijo')} className="bg-orange-600 text-white px-3 py-1 text-sm rounded hover:bg-orange-700">Agregar Gasto</button></div>
-          <div className="flex-1 min-h-0"><DataGrid columns={colsGastosFijos} rows={hojaActiva.gastosFijos || []} onRowsChange={procesarGastosFijos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
         </div>
       )}
       
@@ -467,9 +479,11 @@ export default function PlanillaViewBalance() {
         <DataGrid columns={colsBase} rows={hojaActiva.rows} onRowsChange={procesarCambiosMain} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
       </div>
 
-      {/* --- BARRA INFERIOR (MUESTRA SOLO EL BALANCE GENERAL) --- */}
+      {/* --- BARRA INFERIOR (Calculada en vivo desde las mini-tablas) --- */}
       <div className="bg-gray-800 text-white px-4 py-2 flex gap-8 text-sm shrink-0 shadow-inner items-center">
-        <span className="font-bold text-gray-400 uppercase tracking-widest">Resumen Mensual:</span>
+        <span className="font-bold text-gray-400 uppercase tracking-widest">Resumen Calculado:</span>
+        <span>Total Oficina: <strong className="text-amber-400 ml-1">{formatMoney(totalOficina)}</strong></span>
+        <span>Total Fijos: <strong className="text-orange-400 ml-1">{formatMoney(totalFijos)}</strong></span>
         <span className="ml-auto">Balance General (Importado): <strong className="text-green-400 ml-1 text-base">{formatMoney(hojaActiva.balanceGeneral)}</strong></span>
       </div>
 
