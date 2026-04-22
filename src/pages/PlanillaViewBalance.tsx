@@ -11,7 +11,7 @@ import 'react-data-grid/lib/styles.css';
 // --- UTILIDADES ---
 const crearFilaVacia = (id: number) => ({ id, format: {} });
 const crearFilaSueldo = (id: number) => ({ id, fecha: '', trabajador: '', sueldo: '0', cotizacion: '0', format: {} });
-const crearFilaGasto = (id: number) => ({ id, detalle: '', monto: '0', format: {} });
+const crearFilaGasto = (id: number, tipo: string = 'Oficina') => ({ id, tipo, detalle: '', monto: '0', format: {} });
 
 const parseCurrency = (val: any) => {
   if (!val) return 0;
@@ -57,10 +57,10 @@ export default function PlanillaViewBalance() {
   const userName = sessionStorage.getItem('userName') || 'Invitado';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estados Base
+  // --- ESTADOS BASE ---
   const [hojas, setHojas] = useState<any[]>([{ 
     id: 'hoja-1', nombre: 'Mes 1', rows: [crearFilaVacia(1)], 
-    sueldos: [crearFilaSueldo(1)], gastosOficina: [crearFilaGasto(1)], gastosFijos: [crearFilaGasto(1)], 
+    sueldos: [crearFilaSueldo(1)], gastosOficina: [crearFilaGasto(1, 'Oficina')], gastosFijos: [crearFilaGasto(2, 'Fijo')], 
     balanceGeneral: 0 
   }]);
   
@@ -68,23 +68,14 @@ export default function PlanillaViewBalance() {
   const [activeUsers, setActiveUsers] = useState<any>({});
   const [celdaSeleccionada, setCeldaSeleccionada] = useState<{rowId: number, columnKey: string} | null>(null);
   
-  // 3 Modales Totalmente Separados
+  // --- MODALES SEPARADOS ---
   const [mostrarSueldos, setMostrarSueldos] = useState(false);
   const [mostrarGastosOficina, setMostrarGastosOficina] = useState(false);
   const [mostrarGastosFijos, setMostrarGastosFijos] = useState(false);
 
   const hojaActiva = hojas.find(h => h.id === hojaActivaId) || hojas[0];
 
-  // Cálculo en Vivo para la barra de abajo (Lee directo de las mini tablas)
-  const totalOficina = useMemo(() => {
-    return (hojaActiva.gastosOficina || []).reduce((sum: number, g: any) => sum + parseCurrency(g.monto), 0);
-  }, [hojaActiva.gastosOficina]);
-
-  const totalFijos = useMemo(() => {
-    return (hojaActiva.gastosFijos || []).reduce((sum: number, g: any) => sum + parseCurrency(g.monto), 0);
-  }, [hojaActiva.gastosFijos]);
-
-  // Sincronización Firebase
+  // --- FIREBASE SYNC ---
   useEffect(() => {
     if (!id) return;
     const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
@@ -106,7 +97,7 @@ export default function PlanillaViewBalance() {
     await setDoc(doc(db, 'planillas', id), { hojas: nuevasHojas }, { merge: true });
   };
 
-  // --- ACTUALIZACIONES DE TABLAS ---
+  // --- MANEJO DE TABLAS ---
   const procesarCambiosMain = (nuevasFilas: any[]) => {
     let actualizadas = nuevasFilas.map(fila => {
       const v = parseCurrency(fila.ventaNeta); const m = parseCurrency(fila.costoMateriales); const c = parseCurrency(fila.costoVarios);
@@ -144,10 +135,10 @@ export default function PlanillaViewBalance() {
       nh[idx].sueldos = [...(nh[idx].sueldos||[]), crearFilaSueldo(maxId + 1)];
     } else if (tipo === 'oficina') {
       const maxId = (nh[idx].gastosOficina||[]).length > 0 ? Math.max(...(nh[idx].gastosOficina||[]).map((r:any) => r.id)) : 0;
-      nh[idx].gastosOficina = [...(nh[idx].gastosOficina||[]), crearFilaGasto(maxId + 1)];
+      nh[idx].gastosOficina = [...(nh[idx].gastosOficina||[]), crearFilaGasto(maxId + 1, 'Oficina')];
     } else if (tipo === 'fijo') {
       const maxId = (nh[idx].gastosFijos||[]).length > 0 ? Math.max(...(nh[idx].gastosFijos||[]).map((r:any) => r.id)) : 0;
-      nh[idx].gastosFijos = [...(nh[idx].gastosFijos||[]), crearFilaGasto(maxId + 1)];
+      nh[idx].gastosFijos = [...(nh[idx].gastosFijos||[]), crearFilaGasto(maxId + 1, 'Fijo')];
     }
     
     setHojas(nh); guardarEnNube(nh);
@@ -156,7 +147,7 @@ export default function PlanillaViewBalance() {
   const agregarHoja = () => {
     const nuevoNombre = prompt('Nombre de la nueva hoja:'); if (!nuevoNombre) return;
     const nuevaHojaId = `hoja-${Date.now()}`;
-    const nuevasHojas = [...hojas, { id: nuevaHojaId, nombre: nuevoNombre, rows: [crearFilaVacia(1)], sueldos: [crearFilaSueldo(1)], gastosOficina: [crearFilaGasto(1)], gastosFijos: [crearFilaGasto(1)], balanceGeneral: 0 }];
+    const nuevasHojas = [...hojas, { id: nuevaHojaId, nombre: nuevoNombre, rows: [crearFilaVacia(1)], sueldos: [crearFilaSueldo(1)], gastosOficina: [crearFilaGasto(1, 'Oficina')], gastosFijos: [crearFilaGasto(2, 'Fijo')], balanceGeneral: 0 }];
     setHojas(nuevasHojas); setHojaActivaId(nuevaHojaId); guardarEnNube(nuevasHojas);
   };
 
@@ -174,7 +165,7 @@ export default function PlanillaViewBalance() {
     }
   };
 
-  // --- ESCÁNER INTELIGENTE DE EXCEL ---
+  // --- ESCÁNER INTELIGENTE DE BALANCES ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const modoReemplazo = window.confirm("¿Deseas REEMPLAZAR los datos actuales con los del Excel?");
@@ -217,11 +208,12 @@ export default function PlanillaViewBalance() {
             continue;
           }
 
-          // 2. Extraer Filas Principales
+          // 2. Extraer Filas de la Principal
           if (estado === 'TABLA_MAIN') {
             const firstCol = String(rowArr[idxFecha] || '').toUpperCase();
             const vNetaCol = String(rowArr[idxVNeta] || '').toUpperCase();
             
+            // Si detecta un total o que empiezan los sueldos/gastos, cerramos la tabla principal
             if (firstCol.includes('TOTAL') || firstCol.includes('RESUMEN') || vNetaCol.includes('TOTAL') || vNetaCol.includes('SUELDO') || vNetaCol.includes('TRABAJADOR') || vNetaCol.includes('GASTO') || rowStr.includes('BALANCE GENERAL')) {
               estado = 'POST_MAIN';
             } else {
@@ -241,49 +233,51 @@ export default function PlanillaViewBalance() {
             }
           }
 
-          // 3. Post-Tabla: Lectura precisa de Columnas Izquierdas y Derechas
+          // 3. Extracción de la Parte Inferior (Sueldos y Gastos)
           if (estado === 'POST_MAIN') {
             
-            // LADO IZQUIERDO: Sueldos y Gastos Oficina (Columna Venta Neta y Costo Materiales)
+            // --- BLOQUE IZQUIERDO (Sueldos y Gastos de Oficina) ---
             let textLeft = String(rowArr[idxVNeta] || '').trim();
             let valLeft1 = String(rowArr[idxCMat] || '').trim();
             let valLeft2 = String(rowArr[idxCVar] || '').trim();
             let upperLeft = textLeft.toUpperCase();
 
-            // Cambios de estado en lado izquierdo
+            // Detectores de modo izquierdo
             if (upperLeft === 'SUELDO' || upperLeft === 'TRABAJADOR') {
               leftMode = 'SUELDOS';
               if (upperLeft === 'SUELDO' && rowArr[idxVNeta + 1]) textLeft = String(rowArr[idxVNeta + 1]).trim();
-            } else if (upperLeft.includes('GASTO') || upperLeft.includes('OFICINA')) {
+            } else if (upperLeft.includes('GASTO') || upperLeft.includes('OFICINA') || /ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR|SISTEMA|SOFTWARE/i.test(upperLeft)) {
               leftMode = 'GASTOS_OFICINA';
             } else if (upperLeft.includes('TOTAL')) {
-              if (leftMode === 'SUELDOS') leftMode = 'GASTOS_OFICINA_WAIT'; 
+              if (leftMode === 'SUELDOS') leftMode = 'GASTOS_OFICINA_WAIT'; // El total separa sueldos de gastos
               textLeft = ''; 
             }
 
+            // Guardar izquierdo
             if (textLeft !== '' && !upperLeft.includes('TOTAL') && !upperLeft.includes('SUELDO') && !upperLeft.includes('TRABAJADOR')) {
               if (parseCurrency(valLeft1) !== 0 || parseCurrency(valLeft2) !== 0) {
-                // Escudo para Febrero (Detecta gastos disfrazados de sueldos)
+                
                 if (leftMode === 'SUELDOS') {
-                  if (/ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR/i.test(textLeft)) {
+                  // Filtro salvavidas para Febrero: si es un gasto disfrazado de sueldo
+                  if (/ARRIENDO|LUZ|AGUA|TELEFONO|INTERNET|PLAN|CONTADOR/i.test(textLeft) || i >= 71) {
                     leftMode = 'GASTOS_OFICINA';
-                    hojaObj.gastosOficina.push({ id: idGastoOficina++, detalle: textLeft, monto: valLeft1, format: {} });
+                    hojaObj.gastosOficina.push({ id: idGastoOficina++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
                   } else {
                     hojaObj.sueldos.push({ id: idSueldoBase++, fecha: '', trabajador: textLeft, sueldo: valLeft1, cotizacion: valLeft2, format: {} });
                   }
                 } else {
-                  leftMode = 'GASTOS_OFICINA';
-                  hojaObj.gastosOficina.push({ id: idGastoOficina++, detalle: textLeft, monto: valLeft1, format: {} });
+                  leftMode = 'GASTOS_OFICINA'; // Desbloquea el Wait
+                  hojaObj.gastosOficina.push({ id: idGastoOficina++, tipo: 'Oficina', detalle: textLeft, monto: valLeft1, format: {} });
                 }
               }
             }
 
-            // LADO DERECHO: Gastos Fijos (Columna Balance Ingreso y siguientes)
+            // --- BLOQUE DERECHO (Gastos Fijos) ---
             let textRight = String(rowArr[idxBal] || '').trim();
             let valRight = String(rowArr[idxBal + 1] || rowArr[idxBal + 2] || '').trim();
             let upperRight = textRight.toUpperCase();
 
-            if (upperRight.includes('GASTO') || upperRight.includes('FIJO')) {
+            if (upperRight.includes('GASTO') || upperRight.includes('FIJO') || upperRight.includes('LEASING') || upperRight.includes('CREDITO') || upperRight.includes('CUOTA')) {
               rightMode = 'GASTOS_FIJOS';
             } else if (upperRight.includes('TOTAL')) {
               rightMode = 'IDLE'; textRight = '';
@@ -292,11 +286,11 @@ export default function PlanillaViewBalance() {
             if (textRight !== '' && parseCurrency(valRight) > 0 && !upperRight.includes('TOTAL') && !upperRight.includes('GASTO') && !upperRight.includes('FIJO')) {
               if (rightMode === 'GASTOS_FIJOS' || /LEASING|CREDITO|PRESTAMO|CUOTA/i.test(textRight)) {
                 rightMode = 'GASTOS_FIJOS';
-                hojaObj.gastosFijos.push({ id: idGastoFijo++, detalle: textRight, monto: valRight, format: {} });
+                hojaObj.gastosFijos.push({ id: idGastoFijo++, tipo: 'Fijo', detalle: textRight, monto: valRight, format: {} });
               }
             }
 
-            // BALANCE GENERAL
+            // --- BALANCE GENERAL (Puede estar en Costo Varios o Balance Ingreso) ---
             let textCVar = String(rowArr[idxCVar] || '').toUpperCase();
             if (textCVar.includes('BALANCE GENERAL') || textCVar.includes('BALANCE  GENERAL')) {
               hojaObj.balanceGeneral = parseCurrency(rowArr[idxBal] || rowArr[idxBal + 1]);
@@ -306,10 +300,11 @@ export default function PlanillaViewBalance() {
           }
         }
 
+        // Evitar tablas vacías
         if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
         if (hojaObj.sueldos.length === 0) hojaObj.sueldos.push(crearFilaSueldo(idSueldoBase++));
-        if (hojaObj.gastosOficina.length === 0) hojaObj.gastosOficina.push(crearFilaGasto(idGastoOficina++));
-        if (hojaObj.gastosFijos.length === 0) hojaObj.gastosFijos.push(crearFilaGasto(idGastoFijo++));
+        if (hojaObj.gastosOficina.length === 0) hojaObj.gastosOficina.push(crearFilaGasto(idGastoOficina++, 'Oficina'));
+        if (hojaObj.gastosFijos.length === 0) hojaObj.gastosFijos.push(crearFilaGasto(idGastoFijo++, 'Fijo'));
         
         hojasExtraidas.push(hojaObj);
       });
@@ -317,12 +312,13 @@ export default function PlanillaViewBalance() {
       if (hojasExtraidas.length > 0) {
         const nh = modoReemplazo ? hojasExtraidas : [...hojas, ...hojasExtraidas];
         setHojas(nh); setHojaActivaId(nh[0].id); guardarEnNube(nh);
-      } else { alert("No se detectó el formato en el Excel."); }
+      } else { alert("No se detectó el formato correcto en el Excel."); }
     };
     reader.readAsArrayBuffer(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // --- CELDAS Y COLORES ---
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
@@ -349,7 +345,7 @@ export default function PlanillaViewBalance() {
     return classes;
   };
 
-  // --- COLUMNAS DE LAS TABLAS ---
+  // --- CONFIGURACIÓN DE COLUMNAS ---
   const colsBase = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
     { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
@@ -372,15 +368,20 @@ export default function PlanillaViewBalance() {
 
   const colsSueldos = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
-    { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true },
     { key: 'trabajador', name: 'TRABAJADOR', renderEditCell: textEditor, width: 250, resizable: true },
     { key: 'sueldo', name: 'SUELDO LÍQUIDO', renderEditCell: textEditor, width: 150, resizable: true },
     { key: 'cotizacion', name: 'COTIZACIONES', renderEditCell: textEditor, width: 150, resizable: true }
   ], []);
 
-  const colsGastos = useMemo(() => [
+  const colsGastosOficina = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
-    { key: 'detalle', name: 'DETALLE / CONCEPTO', renderEditCell: textEditor, width: 300, resizable: true },
+    { key: 'detalle', name: 'DETALLE / CONCEPTO', renderEditCell: textEditor, width: 250, resizable: true },
+    { key: 'monto', name: 'MONTO', renderEditCell: textEditor, width: 150, resizable: true }
+  ], []);
+
+  const colsGastosFijos = useMemo(() => [
+    { key: 'id', name: 'N°', width: 60, resizable: true },
+    { key: 'detalle', name: 'DETALLE / CONCEPTO', renderEditCell: textEditor, width: 250, resizable: true },
     { key: 'monto', name: 'MONTO', renderEditCell: textEditor, width: 150, resizable: true }
   ], []);
 
@@ -427,7 +428,7 @@ export default function PlanillaViewBalance() {
 
       {/* --- MODAL 1: SUELDOS --- */}
       {mostrarSueldos && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-xl w-[700px] h-[400px] flex flex-col overflow-hidden">
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-indigo-200 shadow-2xl rounded-xl w-[600px] h-[400px] flex flex-col overflow-hidden">
           <div className="bg-indigo-50 px-4 py-2 border-b flex justify-between items-center">
             <h2 className="font-bold text-indigo-800 text-lg">Sueldos ({hojaActiva.nombre})</h2>
             <button onClick={() => setMostrarSueldos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
@@ -439,31 +440,25 @@ export default function PlanillaViewBalance() {
 
       {/* --- MODAL 2: GASTOS OFICINA --- */}
       {mostrarGastosOficina && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-amber-200 shadow-2xl rounded-xl w-[600px] h-[400px] flex flex-col overflow-hidden">
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-amber-200 shadow-2xl rounded-xl w-[500px] h-[400px] flex flex-col overflow-hidden">
           <div className="bg-amber-50 px-4 py-2 border-b flex justify-between items-center">
             <h2 className="font-bold text-amber-800 text-lg">Gastos de Oficina ({hojaActiva.nombre})</h2>
             <button onClick={() => setMostrarGastosOficina(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
           </div>
-          <div className="bg-gray-100 p-2 border-b flex justify-between items-center">
-            <button onClick={() => agregarFila('oficina')} className="bg-amber-500 text-white px-3 py-1 text-sm rounded hover:bg-amber-600">Agregar Gasto</button>
-            <span className="font-bold text-gray-700">Total: {formatMoney(totalOficina)}</span>
-          </div>
-          <div className="flex-1 min-h-0"><DataGrid columns={colsGastos} rows={hojaActiva.gastosOficina || []} onRowsChange={procesarGastosOficina} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
+          <div className="bg-gray-100 p-2 border-b"><button onClick={() => agregarFila('oficina')} className="bg-amber-500 text-white px-3 py-1 text-sm rounded hover:bg-amber-600">Agregar Gasto</button></div>
+          <div className="flex-1 min-h-0"><DataGrid columns={colsGastosOficina} rows={hojaActiva.gastosOficina || []} onRowsChange={procesarGastosOficina} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
         </div>
       )}
 
       {/* --- MODAL 3: GASTOS FIJOS --- */}
       {mostrarGastosFijos && (
-        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-orange-200 shadow-2xl rounded-xl w-[600px] h-[400px] flex flex-col overflow-hidden">
+        <div className="absolute top-14 right-6 z-50 bg-white border-2 border-orange-200 shadow-2xl rounded-xl w-[500px] h-[400px] flex flex-col overflow-hidden">
           <div className="bg-orange-50 px-4 py-2 border-b flex justify-between items-center">
             <h2 className="font-bold text-orange-800 text-lg">Gastos Fijos ({hojaActiva.nombre})</h2>
             <button onClick={() => setMostrarGastosFijos(false)} className="text-gray-500 hover:text-red-500"><X size={24} /></button>
           </div>
-          <div className="bg-gray-100 p-2 border-b flex justify-between items-center">
-            <button onClick={() => agregarFila('fijo')} className="bg-orange-600 text-white px-3 py-1 text-sm rounded hover:bg-orange-700">Agregar Gasto</button>
-            <span className="font-bold text-gray-700">Total: {formatMoney(totalFijos)}</span>
-          </div>
-          <div className="flex-1 min-h-0"><DataGrid columns={colsGastos} rows={hojaActiva.gastosFijos || []} onRowsChange={procesarGastosFijos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
+          <div className="bg-gray-100 p-2 border-b"><button onClick={() => agregarFila('fijo')} className="bg-orange-600 text-white px-3 py-1 text-sm rounded hover:bg-orange-700">Agregar Gasto</button></div>
+          <div className="flex-1 min-h-0"><DataGrid columns={colsGastosFijos} rows={hojaActiva.gastosFijos || []} onRowsChange={procesarGastosFijos} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} /></div>
         </div>
       )}
       
@@ -472,15 +467,13 @@ export default function PlanillaViewBalance() {
         <DataGrid columns={colsBase} rows={hojaActiva.rows} onRowsChange={procesarCambiosMain} onCellClick={handleCellClick} className="h-full w-full" style={{ minHeight: 0 }} />
       </div>
 
-      {/* --- BARRA INFERIOR (LEE DE LAS MINI-TABLAS) --- */}
+      {/* --- BARRA INFERIOR (MUESTRA SOLO EL BALANCE GENERAL) --- */}
       <div className="bg-gray-800 text-white px-4 py-2 flex gap-8 text-sm shrink-0 shadow-inner items-center">
-        <span className="font-bold text-gray-400 uppercase tracking-widest">Resumen Calculado:</span>
-        <span>Total Oficina: <strong className="text-amber-400 ml-1">{formatMoney(totalOficina)}</strong></span>
-        <span>Total Fijos: <strong className="text-orange-400 ml-1">{formatMoney(totalFijos)}</strong></span>
+        <span className="font-bold text-gray-400 uppercase tracking-widest">Resumen Mensual:</span>
         <span className="ml-auto">Balance General (Importado): <strong className="text-green-400 ml-1 text-base">{formatMoney(hojaActiva.balanceGeneral)}</strong></span>
       </div>
 
-      {/* --- PESTAÑAS --- */}
+      {/* --- PESTAÑAS (TABS EXCEL) --- */}
       <div className="flex items-center gap-1 pt-1 shrink-0 overflow-x-auto bg-gray-50">
         {hojas.map((hoja) => (
           <div key={hoja.id} onClick={() => setHojaActivaId(hoja.id)} className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-b-lg border-x border-b border-t-0 shadow-sm cursor-pointer ${hojaActivaId === hoja.id ? 'bg-white text-blue-600 border-t-2 border-t-blue-500' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}>
