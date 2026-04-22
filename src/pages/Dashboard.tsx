@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, setDoc, doc, getDocs, deleteDoc } from 'firebase/firestore';
-import { FileSpreadsheet, Plus, BarChart3, Calendar, LayoutDashboard, Search, FileText, Wallet, Users, Key, Trash2 } from 'lucide-react';
+import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
+import { FileSpreadsheet, Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const parseCurrency = (val: any) => {
@@ -11,10 +11,22 @@ const parseCurrency = (val: any) => {
   return isNaN(num) ? 0 : num;
 };
 
+// LECTOR DE FECHAS ESTRICTO Y BLINDADO CONTRA DATOS FANTASMAS
 const normalizarFecha = (fechaStr: string) => {
   if (!fechaStr || typeof fechaStr !== 'string' || !fechaStr.includes('-')) return null;
-  const [day, month, year] = fechaStr.split('-');
-  const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  const parts = fechaStr.split('-');
+  if (parts.length !== 3) return null;
+
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  
+  // FILTRO ANTI-INVENTOS: Solo permite datos de años lógicos para tu empresa
+  if (year < 2024 || year > 2030) return null;
+
+  const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return null;
 
   const mesesNombres = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -44,7 +56,10 @@ export default function Dashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [empresaSeleccionada, setEmpresaSeleccionada] = useState<string>('TODAS');
   const [vistaTiempo, setVistaTiempo] = useState<'MES' | 'SEMANA'>('MES');
-  const [vistaMenu, setVistaMenu] = useState<'PANEL' | 'USUARIOS'>('PANEL'); // Alternador de vistas
+  const [vistaMenu, setVistaMenu] = useState<'PANEL' | 'USUARIOS'>('PANEL'); 
+  
+  // ESTADO PARA EL DRILL-DOWN (Clic en gráfico)
+  const [drilldownTiempo, setDrilldownTiempo] = useState<string | null>(null);
   
   // Estados para nuevo usuario
   const [newUsername, setNewUsername] = useState('');
@@ -54,7 +69,6 @@ export default function Dashboard() {
   const userName = sessionStorage.getItem('userName') || 'Usuario';
   const navigate = useNavigate();
 
-  // Cerrar Sesión
   const handleLogout = () => {
     sessionStorage.removeItem('userName');
     navigate('/');
@@ -75,7 +89,7 @@ export default function Dashboard() {
   const crearPlanilla = async (idPlantilla: string) => {
     await setDoc(doc(db, 'planillas', idPlantilla), {
       creado: new Date().toISOString(), creador: userName,
-      hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [], sueldos: [], gastosOficina: [], gastosFijos: [], totalGastosOficina: 0, totalGastosFijos: 0, balanceGeneral: 0 }]
+      hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [], sueldos: [], gastosOficina: [], gastosFijos: [], balanceGeneral: 0 }]
     });
     navigate(idPlantilla.includes('factura') ? `/factura/${idPlantilla}` : `/balance/${idPlantilla}`);
   };
@@ -90,10 +104,7 @@ export default function Dashboard() {
     if (!newUsername || !newPassword) return;
     const idUnico = newUsername.toLowerCase().replace(/\s+/g, '');
     await setDoc(doc(db, 'usuarios', idUnico), {
-      username: newUsername,
-      password: newPassword,
-      role: newRole,
-      creado: new Date().toISOString()
+      username: newUsername, password: newPassword, role: newRole, creado: new Date().toISOString()
     });
     setNewUsername(''); setNewPassword(''); alert('Usuario Creado Exitosamente');
   };
@@ -105,47 +116,84 @@ export default function Dashboard() {
     }
   };
 
-  const { listaEmpresas, datosGrafica } = useMemo(() => {
+  // --- MOTOR DE GRÁFICOS (PRINCIPAL Y DRILL-DOWN) ---
+  const { listaEmpresas, datosGraficaGlobal, datosDrilldown } = useMemo(() => {
     const empresasSet = new Set<string>();
-    const agrupado: any = {};
+    const agrupadoGlobal: any = {};
+    const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
+      // Solo tomamos balances para las gráficas de ingresos
       if (p.id.includes('factura')) return;
+      
       (p.hojas || []).forEach((h: any) => {
         (h.rows || []).forEach((row: any) => {
-          const vNeta = parseCurrency(row.ventaNeta); const vBalance = parseCurrency(row.balanceIngreso);
-          const emp = String(row.empresa || row.cliente || '').trim().toUpperCase();
-          if (emp) empresasSet.add(emp);
+          const vNeta = parseCurrency(row.ventaNeta); 
+          const vBalance = parseCurrency(row.balanceIngreso);
+          
+          // Ignoramos filas totalmente vacías
+          if (vNeta === 0 && vBalance === 0) return;
 
+          const emp = String(row.empresa || row.cliente || 'SIN CLIENTE').trim().toUpperCase();
           const f = normalizarFecha(row.fecha);
-          if (f && emp && (empresaSeleccionada === 'TODAS' || empresaSeleccionada === emp)) {
-            const key = vistaTiempo === 'MES' ? f.mesKey : f.semanaKey;
-            const label = vistaTiempo === 'MES' ? f.mesLabel : f.semanaLabel;
-            if (!agrupado[key]) agrupado[key] = { name: label, sortKey: key, "Venta Neta": 0, "Balance Real": 0 };
-            agrupado[key]["Venta Neta"] += vNeta; agrupado[key]["Balance Real"] += vBalance;
+          
+          // Si la fecha es inválida o fantasma, se ignora
+          if (!f) return;
+
+          empresasSet.add(emp);
+
+          const timeKey = vistaTiempo === 'MES' ? f.mesKey : f.semanaKey;
+          const timeLabel = vistaTiempo === 'MES' ? f.mesLabel : f.semanaLabel;
+
+          // 1. LLENAR DATOS GLOBALES (Meses/Semanas)
+          if (empresaSeleccionada === 'TODAS' || empresaSeleccionada === emp) {
+            if (!agrupadoGlobal[timeKey]) {
+              agrupadoGlobal[timeKey] = { name: timeLabel, sortKey: timeKey, "Venta Neta": 0, "Balance Real": 0 };
+            }
+            agrupadoGlobal[timeKey]["Venta Neta"] += vNeta; 
+            agrupadoGlobal[timeKey]["Balance Real"] += vBalance;
+          }
+
+          // 2. LLENAR DATOS DE DRILL-DOWN (División por clientes si se hizo clic en un mes)
+          if (drilldownTiempo && timeLabel === drilldownTiempo) {
+            if (!agrupadoDrilldown[emp]) {
+              agrupadoDrilldown[emp] = { name: emp, "Venta Neta": 0, "Balance Real": 0 };
+            }
+            agrupadoDrilldown[emp]["Venta Neta"] += vNeta;
+            agrupadoDrilldown[emp]["Balance Real"] += vBalance;
           }
         });
       });
     });
 
-    const graficaOrdenada = Object.values(agrupado).sort((a: any, b: any) => a.sortKey.localeCompare(b.sortKey));
-    return { listaEmpresas: Array.from(empresasSet).sort(), datosGrafica: graficaOrdenada };
-  }, [planillas, empresaSeleccionada, vistaTiempo]);
+    const graficaOrdenadaGlobal = Object.values(agrupadoGlobal).sort((a: any, b: any) => a.sortKey.localeCompare(b.sortKey));
+    // Ordenar clientes de mayor a menor venta en el drilldown
+    const graficaOrdenadaDrilldown = Object.values(agrupadoDrilldown).sort((a: any, b: any) => b["Venta Neta"] - a["Venta Neta"]);
+
+    return { 
+      listaEmpresas: Array.from(empresasSet).sort(), 
+      datosGraficaGlobal: graficaOrdenadaGlobal,
+      datosDrilldown: graficaOrdenadaDrilldown
+    };
+  }, [planillas, empresaSeleccionada, vistaTiempo, drilldownTiempo]);
 
   const filteredPlanillas = planillas.filter(p => p.id.includes(searchTerm.toLowerCase()) && !PLANILLAS_FIJAS.find(pf => pf.id === p.id));
+
+  // Renderizar la gráfica correspondiente
+  const datosActuales = drilldownTiempo ? datosDrilldown : datosGraficaGlobal;
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
       {/* MENÚ LATERAL */}
-      <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col">
+      <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
         <div className="p-6 border-b border-slate-100">
           <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
         </div>
         <nav className="flex-1 p-4 space-y-2">
-          <button onClick={() => setVistaMenu('PANEL')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-colors ${vistaMenu === 'PANEL' ? 'bg-green-50 text-green-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+          <button onClick={() => setVistaMenu('PANEL')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${vistaMenu === 'PANEL' ? 'bg-green-50 text-green-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
             <LayoutDashboard size={20} /> Panel Principal
           </button>
-          <button onClick={() => setVistaMenu('USUARIOS')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-colors ${vistaMenu === 'USUARIOS' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+          <button onClick={() => setVistaMenu('USUARIOS')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${vistaMenu === 'USUARIOS' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
             <Users size={20} /> Usuarios
           </button>
         </nav>
@@ -168,11 +216,12 @@ export default function Dashboard() {
                   <h2 className="text-3xl font-black text-slate-800 tracking-tight">Panel Principal</h2>
                   <p className="text-slate-500 mt-1 font-medium">Bienvenido, {userName}</p>
                 </div>
-                <button onClick={crearNuevaPersonalizada} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-900 shadow-sm">
+                <button onClick={crearNuevaPersonalizada} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-900 shadow-md transition-transform active:scale-95">
                   <Plus size={20} /> Planilla Extra
                 </button>
               </div>
 
+              {/* LAS 4 PLANILLAS CLÁSICAS */}
               <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                 {PLANILLAS_FIJAS.map((pf) => {
@@ -182,7 +231,7 @@ export default function Dashboard() {
 
                   if (existe) {
                     return (
-                      <Link key={pf.id} to={enlace} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-lg transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden">
+                      <Link key={pf.id} to={enlace} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden">
                         <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${esFactura ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
                         <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 ${esFactura ? 'bg-gradient-to-br from-purple-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
                           {esFactura ? <FileText size={36} /> : <Wallet size={36} />}
@@ -203,43 +252,70 @@ export default function Dashboard() {
                 })}
               </div>
 
+              {/* --- GRÁFICA ADAPTATIVA E INTERACTIVA --- */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 mb-10">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6 border-b border-slate-100 pb-6">
-                  <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3"><div className="p-2 bg-green-50 rounded-lg text-green-600"><BarChart3 size={24} /></div> Analítica de Ventas y Balance</h2>
+                  
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                      <div className="p-2 bg-green-50 rounded-lg text-green-600"><BarChart3 size={24} /></div> 
+                      {drilldownTiempo ? `Desglose de Clientes: ${drilldownTiempo}` : 'Analítica de Ventas'}
+                    </h2>
+                    {!drilldownTiempo && <p className="text-sm font-medium text-blue-500 mt-2 ml-12 animate-pulse">💡 Haz clic en una barra para dividir por clientes</p>}
+                  </div>
+                  
                   <div className="flex flex-wrap gap-3 w-full lg:w-auto">
-                    <select value={empresaSeleccionada} onChange={(e) => setEmpresaSeleccionada(e.target.value)} className="flex-1 lg:flex-none bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="TODAS">TODOS LOS CLIENTES</option>
-                      {listaEmpresas.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
-                    <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
-                      <button onClick={() => setVistaTiempo('MES')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'MES' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>MES</button>
-                      <button onClick={() => setVistaTiempo('SEMANA')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'SEMANA' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>SEMANA</button>
-                    </div>
+                    {drilldownTiempo ? (
+                      <button onClick={() => setDrilldownTiempo(null)} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-slate-900 transition-all shadow-md">
+                        <ArrowLeft size={18} /> Volver a Meses
+                      </button>
+                    ) : (
+                      <>
+                        <select value={empresaSeleccionada} onChange={(e) => setEmpresaSeleccionada(e.target.value)} className="flex-1 lg:flex-none bg-slate-50 border border-slate-200 text-sm font-bold text-slate-700 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                          <option value="TODAS">TODOS LOS CLIENTES (GLOBAL)</option>
+                          {listaEmpresas.map(e => <option key={e} value={e}>{e}</option>)}
+                        </select>
+                        
+                        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
+                          <button onClick={() => setVistaTiempo('MES')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'MES' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>MES</button>
+                          <button onClick={() => setVistaTiempo('SEMANA')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'SEMANA' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>SEMANA</button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 <div className="h-80 w-full">
-                  {datosGrafica.length > 0 ? (
+                  {datosActuales.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={datosGrafica}>
+                      <BarChart 
+                        data={datosActuales}
+                        onClick={(state) => {
+                          if (!drilldownTiempo && state && state.activeLabel) {
+                            setDrilldownTiempo(state.activeLabel as string);
+                          }
+                        }}
+                        className={!drilldownTiempo ? "cursor-pointer" : ""}
+                      >
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} dy={10} />
                         <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} dx={-10} />
                         <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'}} formatter={(value: number) => [`$${value.toLocaleString('es-CL')}`, '']} />
                         <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                        <Bar dataKey="Venta Neta" name="Venta Neta (Ingreso Bruto)" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={40} />
-                        <Bar dataKey="Balance Real" name="Balance (Ganancia Neta)" fill="#10b981" radius={[6, 6, 0, 0]} barSize={40} />
+                        <Bar dataKey="Venta Neta" name="Venta Neta (Ingreso Bruto)" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={drilldownTiempo ? 60 : 40} />
+                        <Bar dataKey="Balance Real" name="Balance (Ganancia Neta)" fill="#10b981" radius={[6, 6, 0, 0]} barSize={drilldownTiempo ? 60 : 40} />
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3"><Calendar size={56} className="opacity-30" /><p className="font-bold text-slate-500">No hay datos de ventas.</p></div>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-3"><Calendar size={56} className="opacity-30" /><p className="font-bold text-slate-500">No hay datos válidos en este período.</p></div>
                   )}
                 </div>
               </div>
 
+              {/* OTRAS PLANILLAS (EXTRA) */}
               {filteredPlanillas.length > 0 && (
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h2 className="text-xl font-black text-slate-800">Otras Planillas</h2></div>
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h2 className="text-xl font-black text-slate-800">Otras Planillas Creadas</h2></div>
                   <div className="divide-y divide-slate-100">
                     {filteredPlanillas.map((p) => (
                       <div key={p.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
@@ -265,7 +341,6 @@ export default function Dashboard() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Formulario de Creación */}
                 <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 h-fit">
                   <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2"><Plus size={20} className="text-blue-500"/> Nuevo Usuario</h3>
                   <form onSubmit={crearUsuario} className="space-y-5">
@@ -288,7 +363,6 @@ export default function Dashboard() {
                   </form>
                 </div>
 
-                {/* Lista de Usuarios */}
                 <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                     <h3 className="text-xl font-black text-slate-800">Usuarios Activos ({usuariosDB.length})</h3>
