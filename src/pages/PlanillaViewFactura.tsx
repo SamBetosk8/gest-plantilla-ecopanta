@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, PaintBucket, Plus, FileText, X, Edit2 } from 'lucide-react';
+import { ArrowLeft, Upload, PaintBucket, Plus, FileText, X, Edit2, ShoppingCart, Tags } from 'lucide-react';
 import DataGrid, { textEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -8,7 +8,6 @@ import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import * as XLSX from 'xlsx';
 import 'react-data-grid/lib/styles.css';
 
-// --- UTILIDADES ---
 const crearFilaVacia = (id: number) => ({ 
   id, fecha: '', nFactura: '', nBoleta: '', proveedor: '', insumo: '', 
   totalFactura: '0', totalBoleta: '0', observaciones: '', 
@@ -64,8 +63,8 @@ export default function PlanillaViewFactura() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isCopiapo = (id || '').toLowerCase().includes('copiapo');
+  const isCompras = (id || '').toLowerCase().includes('compras');
 
-  // --- ESTADOS BASE ---
   const [hojas, setHojas] = useState<any[]>([{ id: 'hoja-1', nombre: 'Mes 1', rows: [crearFilaVacia(1)] }]);
   const [hojaActivaId, setHojaActivaId] = useState<string>('hoja-1');
   const [activeUsers, setActiveUsers] = useState<any>({});
@@ -73,7 +72,7 @@ export default function PlanillaViewFactura() {
 
   const hojaActiva = hojas.find(h => h.id === hojaActivaId) || hojas[0];
 
-  // --- CÁLCULOS EN VIVO PARA TOTALES (Barra Inferior) ---
+  // --- CÁLCULOS EN VIVO PARA TOTALES ---
   const sumaFacturas = useMemo(() => {
     return (hojaActiva.rows || []).reduce((sum: number, r: any) => sum + parseCurrency(r.totalFactura), 0);
   }, [hojaActiva.rows]);
@@ -144,7 +143,7 @@ export default function PlanillaViewFactura() {
     }
   };
 
-  // --- ESCÁNER INTELIGENTE DE FACTURAS (BIFURCADO CALAMA/COPIAPÓ) ---
+  // --- ESCÁNER INTELIGENTE DE FACTURAS ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const modoReemplazo = window.confirm("¿Deseas REEMPLAZAR los datos actuales con los del Excel?");
@@ -164,22 +163,16 @@ export default function PlanillaViewFactura() {
         let estado = 'BUSCANDO_TITULOS'; 
         let mainHeaders: string[] = [];
         
-        // Indices comunes
         let idxFecha = -1, idxFactura = -1, idxProv = -1;
-        // Indices Calama
-        let idxInsumo = -1, idxTotalGen = -1, idxTotalFac = -1, idxTotalBol = -1;
-        // Indices Copiapó
-        let idxDesc = -1, idxValUnit = -1, idxCant = -1, idxUnidad = -1, idxValNeto = -1, idxOrden = -1;
+        let idxInsumo = -1, idxTotalGen = -1, idxTotalFac = -1, idxTotalBol = -1; // Calama
+        let idxDesc = -1, idxValUnit = -1, idxCant = -1, idxUnidad = -1, idxValNeto = -1, idxOrden = -1; // Copiapó
 
         for (let i = 0; i < rawData.length; i++) {
           const rowArr = rawData[i] as string[];
           const rowStr = rowArr.join(' ').toUpperCase();
           if (!rowStr.trim()) continue;
 
-          // 1. Detectar Títulos dinámicamente
           if (estado === 'BUSCANDO_TITULOS') {
-            
-            // Si es COPIAPÓ (Busca Fecha y Descripción)
             if (isCopiapo && rowStr.includes('FECHA') && rowStr.includes('DESCRIPCION') && rowStr.includes('PROVEEDOR')) {
               estado = 'EXTRAYENDO_DATOS';
               mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
@@ -196,7 +189,6 @@ export default function PlanillaViewFactura() {
               continue;
             }
             
-            // Si es CALAMA (Busca Fecha y Factura/Insumo/Total)
             if (!isCopiapo && rowStr.includes('FECHA') && (rowStr.includes('FACTURA') || rowStr.includes('INSUMO') || rowStr.includes('TOTAL'))) {
               estado = 'EXTRAYENDO_DATOS';
               mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
@@ -213,15 +205,16 @@ export default function PlanillaViewFactura() {
             }
           }
 
-          // 2. Extraer Datos
           if (estado === 'EXTRAYENDO_DATOS') {
-            if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) continue;
+            if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) {
+              estado = 'BUSCANDO_TITULOS'; // Por si hay múltiples tablas en la misma hoja
+              continue;
+            }
 
             const valFecha = parseExcelDate(rowArr[idxFecha]);
             const valFactura = idxFactura !== -1 ? rowArr[idxFactura] : '';
             const valProv = idxProv !== -1 ? rowArr[idxProv] : '';
 
-            // --- EXTRACCIÓN COPIAPÓ ---
             if (isCopiapo) {
               const valDesc = idxDesc !== -1 ? rowArr[idxDesc] : '';
               const valUnit = idxValUnit !== -1 ? rowArr[idxValUnit] : '0';
@@ -237,9 +230,7 @@ export default function PlanillaViewFactura() {
                 proveedor: valProv, valorUnitario: valUnit, cantidad: valCant, unidad: valUnidad,
                 valorNeto: valNeto, nOrden: valOrden, format: {}
               });
-            } 
-            // --- EXTRACCIÓN CALAMA ---
-            else {
+            } else {
               const valInsumo = idxInsumo !== -1 ? rowArr[idxInsumo] : '';
               let vTotalFactura = '0', vTotalBoleta = '0';
 
@@ -321,6 +312,9 @@ export default function PlanillaViewFactura() {
     { key: 'nOrden', name: 'N° ORDEN', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'nOrden') }
   ], [hojaActivaId, activeUsers]);
 
+  // COLOR DEL TEMA SEGÚN COMPRAS O VENTAS
+  const themeColor = isCompras ? 'purple' : 'blue';
+
   return (
     <div className="p-2 h-screen flex flex-col bg-gray-50 overflow-hidden relative">
       <style>{`.rdg { --rdg-border-color: #d1d5db; height: 100%; border: none; } .rdg-cell { border-right: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 0 8px; } .rdg-header-cell { background-color: #f3f4f6; border-bottom: 2px solid #9ca3af; font-weight: bold; color: #374151; } `}</style>
@@ -328,9 +322,12 @@ export default function PlanillaViewFactura() {
       {/* --- TOOLBAR SUPERIOR --- */}
       <div className="flex items-center gap-2 mb-2 px-2 shrink-0 flex-wrap">
         <Link to="/dashboard" className="text-gray-500 hover:text-gray-800 mr-2"><ArrowLeft size={24} /></Link>
-        <h1 className="text-xl font-bold uppercase text-purple-800 mr-2 flex items-center gap-2"><FileText size={20}/> {id?.replace('-', ' ')}</h1>
+        <h1 className={`text-xl font-black uppercase text-${themeColor}-800 mr-2 flex items-center gap-2`}>
+          {isCompras ? <ShoppingCart size={22}/> : <Tags size={22}/>} 
+          {id?.replace(/-/g, ' ')}
+        </h1>
         
-        <div className="flex items-center gap-1 bg-white p-1 rounded-lg border shadow-sm">
+        <div className="flex items-center gap-1 bg-white p-1 rounded-lg border shadow-sm ml-4">
           <PaintBucket size={18} className="text-gray-400 mx-2" />
           <button onClick={() => pintarCelda('bg-yellow-100 text-yellow-900')} className="w-6 h-6 rounded bg-yellow-100 border border-yellow-300" />
           <button onClick={() => pintarCelda('bg-green-100 text-green-900')} className="w-6 h-6 rounded bg-green-100 border border-green-300" />
@@ -339,10 +336,14 @@ export default function PlanillaViewFactura() {
           <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border text-xs text-gray-400">✖</button>
         </div>
 
-        <button onClick={agregarFila} className="ml-2 flex items-center gap-1 bg-purple-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-purple-700"><Plus size={16} /> Fila</button>
+        <button onClick={agregarFila} className={`ml-2 flex items-center gap-1 text-white px-3 py-1.5 text-sm rounded-lg shadow transition-colors bg-${themeColor}-600 hover:bg-${themeColor}-700`}>
+          <Plus size={16} /> Fila
+        </button>
 
         <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
-        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700"><Upload size={16} /> Importar Facturas</button>
+        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700">
+          <Upload size={16} /> Importar Datos
+        </button>
 
         <div className="flex -space-x-2 ml-auto pr-4">
           {Object.values(activeUsers).map((u: any) => (
@@ -364,32 +365,51 @@ export default function PlanillaViewFactura() {
       </div>
 
       {/* --- BARRA INFERIOR DE RESUMEN --- */}
-      <div className="bg-purple-900 text-white px-6 py-3 flex gap-10 text-sm shrink-0 shadow-inner items-center">
-        <span className="font-bold text-purple-300 uppercase tracking-widest">Resumen Facturación:</span>
+      <div className={`text-white px-6 py-3 flex gap-10 text-sm shrink-0 shadow-inner items-center bg-${themeColor}-900`}>
+        <span className={`font-bold uppercase tracking-widest text-${themeColor}-300`}>
+          Resumen General:
+        </span>
         
         {isCopiapo ? (
-           <span className="flex items-center gap-2 text-purple-200">Suma Valor Neto: <strong className="text-white bg-purple-800 px-3 py-1 rounded-lg border border-purple-700">{formatMoney(sumaCopiapoNeto)}</strong></span>
+           <span className={`flex items-center gap-2 text-${themeColor}-200`}>
+             Suma Valor Neto: 
+             <strong className={`text-white px-3 py-1 rounded-lg border bg-${themeColor}-800 border-${themeColor}-700`}>
+               {formatMoney(sumaCopiapoNeto)}
+             </strong>
+           </span>
         ) : (
            <>
-              <span className="flex items-center gap-2 text-purple-200">Suma Boletas: <strong className="text-white bg-purple-800 px-3 py-1 rounded-lg border border-purple-700">{formatMoney(sumaBoletas)}</strong></span>
-              <span className="flex items-center gap-2 text-purple-200">Suma Facturas: <strong className="text-white bg-purple-800 px-3 py-1 rounded-lg border border-purple-700">{formatMoney(sumaFacturas)}</strong></span>
+              <span className={`flex items-center gap-2 text-${themeColor}-200`}>
+                Suma Boletas: 
+                <strong className={`text-white px-3 py-1 rounded-lg border bg-${themeColor}-800 border-${themeColor}-700`}>
+                  {formatMoney(sumaBoletas)}
+                </strong>
+              </span>
+              <span className={`flex items-center gap-2 text-${themeColor}-200`}>
+                Suma Facturas: 
+                <strong className={`text-white px-3 py-1 rounded-lg border bg-${themeColor}-800 border-${themeColor}-700`}>
+                  {formatMoney(sumaFacturas)}
+                </strong>
+              </span>
            </>
         )}
         
         <span className="ml-auto flex items-center gap-3">
           TOTAL MES: 
-          <strong className="text-green-400 bg-gray-800 px-4 py-1.5 rounded-lg text-lg border border-gray-700 shadow-sm">{formatMoney(sumaTotal)}</strong>
+          <strong className="text-green-400 bg-gray-800 px-4 py-1.5 rounded-lg text-lg border border-gray-700 shadow-sm">
+            {formatMoney(sumaTotal)}
+          </strong>
         </span>
       </div>
 
       {/* --- PESTAÑAS (TABS EXCEL) --- */}
       <div className="flex items-center gap-1 pt-1 shrink-0 overflow-x-auto bg-gray-50">
         {hojas.map((hoja) => (
-          <div key={hoja.id} onClick={() => setHojaActivaId(hoja.id)} className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-b-lg border-x border-b border-t-0 shadow-sm cursor-pointer ${hojaActivaId === hoja.id ? 'bg-white text-purple-600 border-t-2 border-t-purple-500' : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}>
+          <div key={hoja.id} onClick={() => setHojaActivaId(hoja.id)} className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-b-lg border-x border-b border-t-0 shadow-sm cursor-pointer transition-colors ${hojaActivaId === hoja.id ? `bg-white text-${themeColor}-600 border-t-2 border-t-${themeColor}-500` : 'bg-gray-200 text-gray-500 hover:bg-gray-300'}`}>
             <FileText size={16} /> <span onDoubleClick={() => renombrarHoja(hoja.id, hoja.nombre)}>{hoja.nombre}</span>
             {hojaActivaId === hoja.id && (
               <div className="flex items-center gap-1 ml-2">
-                 <Edit2 size={14} className="text-gray-400 hover:text-purple-500" onClick={(e) => { e.stopPropagation(); renombrarHoja(hoja.id, hoja.nombre); }} />
+                 <Edit2 size={14} className={`hover:text-${themeColor}-500 text-gray-400`} onClick={(e) => { e.stopPropagation(); renombrarHoja(hoja.id, hoja.nombre); }} />
                  {hojas.length > 1 && (<X size={14} className="text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); eliminarHoja(hoja.id); }} />)}
               </div>
             )}

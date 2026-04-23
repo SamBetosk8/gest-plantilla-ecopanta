@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
-import { FileSpreadsheet, Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const parseCurrency = (val: any) => {
@@ -22,7 +22,6 @@ const normalizarFecha = (fechaStr: string) => {
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-  
   if (year < 2024 || year > 2030) return null;
 
   const d = new Date(year, month - 1, day);
@@ -42,27 +41,25 @@ const normalizarFecha = (fechaStr: string) => {
 };
 
 const PLANILLAS_FIJAS = [
-  { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance' },
-  { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance' },
-  { id: 'facturas-calama', titulo: 'FACTURAS CALAMA', tipo: 'factura' },
-  { id: 'facturas-copiapo', titulo: 'FACTURAS COPIAPÓ', tipo: 'factura' }
+  { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance', ciudad: 'calama' },
+  { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
+  { id: 'facturas-calama', titulo: 'FACTURAS CALAMA', tipo: 'factura', ciudad: 'calama' },
+  { id: 'facturas-copiapo', titulo: 'FACTURAS COPIAPÓ', tipo: 'factura', ciudad: 'copiapo' }
 ];
 
 export default function Dashboard() {
   const [planillas, setPlanillas] = useState<any[]>([]);
   const [usuariosDB, setUsuariosDB] = useState<any[]>([]);
   
-  const [searchTerm, setSearchTerm] = useState('');
   const [empresaSeleccionada, setEmpresaSeleccionada] = useState<string>('TODAS');
   const [vistaTiempo, setVistaTiempo] = useState<'MES' | 'SEMANA'>('MES');
   const [vistaMenu, setVistaMenu] = useState<'PANEL' | 'USUARIOS'>('PANEL'); 
   
   const [drilldownTiempo, setDrilldownTiempo] = useState<string | null>(null);
+  const [modalFactura, setModalFactura] = useState<string | null>(null); // 'calama' o 'copiapo'
   
-  // Estado para controlar qué contraseñas son visibles
   const [mostrarPasswords, setMostrarPasswords] = useState<Record<string, boolean>>({});
   
-  // Estados para nuevo usuario
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('Empleado');
@@ -87,17 +84,36 @@ export default function Dashboard() {
     return () => { unsubPlanillas(); unsubUsuarios(); };
   }, []);
 
-  const crearPlanilla = async (idPlantilla: string) => {
-    await setDoc(doc(db, 'planillas', idPlantilla), {
-      creado: new Date().toISOString(), creador: userName,
-      hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [], sueldos: [], gastosOficina: [], gastosFijos: [], balanceGeneral: 0 }]
-    });
-    navigate(idPlantilla.includes('factura') ? `/factura/${idPlantilla}` : `/balance/${idPlantilla}`);
+  // Abre balances o crea si no existe
+  const manejarClickBalance = async (idCompleto: string) => {
+    const existe = planillas.find(p => p.id === idCompleto);
+    if (existe) {
+      navigate(`/balance/${idCompleto}`);
+    } else {
+      await setDoc(doc(db, 'planillas', idCompleto), {
+        creado: new Date().toISOString(), creador: userName,
+        hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [], sueldos: [], gastosOficina: [], gastosFijos: [], balanceGeneral: 0 }]
+      });
+      navigate(`/balance/${idCompleto}`);
+    }
   };
 
-  const crearNuevaPersonalizada = () => {
-    const nombre = prompt('Nombre de la nueva planilla:');
-    if (nombre) crearPlanilla(nombre.toLowerCase().replace(/\s+/g, '-'));
+  // Abre facturas (Compras o Ventas) o crea si no existe
+  const abrirFacturaEspecifica = async (tipo: 'compras' | 'ventas') => {
+    if (!modalFactura) return;
+    const idCompleto = `facturas-${tipo}-${modalFactura}`;
+    const existe = planillas.find(p => p.id === idCompleto);
+    
+    if (existe) {
+      navigate(`/factura/${idCompleto}`);
+    } else {
+      await setDoc(doc(db, 'planillas', idCompleto), {
+        creado: new Date().toISOString(), creador: userName,
+        hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [] }]
+      });
+      navigate(`/factura/${idCompleto}`);
+    }
+    setModalFactura(null);
   };
 
   const crearUsuario = async (e: React.FormEvent) => {
@@ -171,7 +187,6 @@ export default function Dashboard() {
     };
   }, [planillas, empresaSeleccionada, vistaTiempo, drilldownTiempo]);
 
-  const filteredPlanillas = planillas.filter(p => p.id.includes(searchTerm.toLowerCase()) && !PLANILLAS_FIJAS.find(pf => pf.id === p.id));
   const datosActuales = drilldownTiempo ? datosDrilldown : datosGraficaGlobal;
 
   return (
@@ -201,43 +216,36 @@ export default function Dashboard() {
           {/* VISTA: PANEL PRINCIPAL */}
           {vistaMenu === 'PANEL' && (
             <>
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-10 gap-4">
+              <div className="flex justify-between items-end mb-10">
                 <div>
                   <h2 className="text-3xl font-black text-slate-800 tracking-tight">Panel Principal</h2>
                   <p className="text-slate-500 mt-1 font-medium">Bienvenido, {userName}</p>
                 </div>
-                <button onClick={crearNuevaPersonalizada} className="bg-slate-800 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-900 shadow-md transition-transform active:scale-95">
-                  <Plus size={20} /> Planilla Extra
-                </button>
               </div>
 
               <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                 {PLANILLAS_FIJAS.map((pf) => {
-                  const existe = planillas.find(p => p.id === pf.id);
                   const esFactura = pf.tipo === 'factura';
-                  const enlace = esFactura ? `/factura/${pf.id}` : `/balance/${pf.id}`;
 
-                  if (existe) {
-                    return (
-                      <Link key={pf.id} to={enlace} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden">
-                        <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${esFactura ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
-                        <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 ${esFactura ? 'bg-gradient-to-br from-purple-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
-                          {esFactura ? <FileText size={36} /> : <Wallet size={36} />}
-                        </div>
-                        <div className="text-center z-10">
-                          <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight leading-tight">{pf.titulo}</h3>
-                        </div>
-                      </Link>
-                    );
-                  } else {
-                    return (
-                      <button key={pf.id} onClick={() => crearPlanilla(pf.id)} className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-3xl flex flex-col justify-center items-center gap-3 h-52 hover:bg-slate-100 hover:border-blue-400 transition-colors text-slate-500 group">
-                        <div className="p-3 bg-white rounded-full shadow-sm group-hover:text-blue-500"><Plus size={28} /></div>
-                        <span className="font-bold text-center px-4">Crear<br/>{pf.titulo}</span>
-                      </button>
-                    );
-                  }
+                  return (
+                    <button 
+                      key={pf.id} 
+                      onClick={() => {
+                        if (esFactura) setModalFactura(pf.ciudad);
+                        else manejarClickBalance(pf.id);
+                      }} 
+                      className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden"
+                    >
+                      <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${esFactura ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
+                      <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 ${esFactura ? 'bg-gradient-to-br from-purple-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
+                        {esFactura ? <FileText size={36} /> : <Wallet size={36} />}
+                      </div>
+                      <div className="text-center z-10">
+                        <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight leading-tight">{pf.titulo}</h3>
+                      </div>
+                    </button>
+                  );
                 })}
               </div>
 
@@ -288,23 +296,6 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-
-              {filteredPlanillas.length > 0 && (
-                <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h2 className="text-xl font-black text-slate-800">Otras Planillas Creadas</h2></div>
-                  <div className="divide-y divide-slate-100">
-                    {filteredPlanillas.map((p) => (
-                      <div key={p.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
-                        <div className="flex items-center gap-5">
-                          <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200"><FileSpreadsheet size={24} /></div>
-                          <h3 className="font-bold text-slate-800 uppercase group-hover:text-blue-600 transition-colors">{p.id.replace(/-/g, ' ')}</h3>
-                        </div>
-                        <Link to={p.id.includes('factura') ? `/factura/${p.id}` : `/balance/${p.id}`} className="px-5 py-2 text-sm font-bold text-slate-600 border border-slate-200 hover:bg-slate-100 rounded-lg transition-all">Abrir</Link>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
 
@@ -377,6 +368,44 @@ export default function Dashboard() {
 
         </div>
       </div>
+
+      {/* MODAL DE SELECCIÓN (COMPRAS O VENTAS) */}
+      {modalFactura && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden">
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-purple-500 rounded-full opacity-10"></div>
+            
+            <div className="flex justify-between items-center mb-6 relative z-10">
+              <h3 className="text-2xl font-black text-slate-800">Seleccionar Vista</h3>
+              <button onClick={() => setModalFactura(null)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={24} /></button>
+            </div>
+            
+            <p className="text-slate-500 mb-8 font-medium relative z-10">¿Qué facturas de <strong className="text-slate-700 uppercase">{modalFactura}</strong> deseas gestionar?</p>
+            
+            <div className="flex flex-col gap-4 relative z-10">
+              <button 
+                onClick={() => abrirFacturaEspecifica('compras')} 
+                className="bg-purple-50 border border-purple-200 text-purple-800 p-5 rounded-2xl font-black text-lg flex items-center justify-between hover:bg-purple-600 hover:text-white transition-all group shadow-sm hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <ShoppingCart size={28} className="text-purple-500 group-hover:text-purple-200" /> 
+                  Facturas de Compras
+                </div>
+              </button>
+              
+              <button 
+                onClick={() => abrirFacturaEspecifica('ventas')} 
+                className="bg-blue-50 border border-blue-200 text-blue-800 p-5 rounded-2xl font-black text-lg flex items-center justify-between hover:bg-blue-600 hover:text-white transition-all group shadow-sm hover:shadow-md"
+              >
+                <div className="flex items-center gap-4">
+                  <Tags size={28} className="text-blue-500 group-hover:text-blue-200" /> 
+                  Facturas de Ventas
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
