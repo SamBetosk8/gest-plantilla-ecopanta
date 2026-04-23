@@ -2,7 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import PlanillaViewBalance from './pages/PlanillaViewBalance';
-import PlanillaViewFactura from './pages/PlanillaViewFactura';
+import PlanillaViewFacturaCompra from './pages/PlanillaViewFacturaCompra';
+import PlanillaViewFacturaVenta from './pages/PlanillaViewFacturaVenta';
 
 // Este componente protege las rutas. Si no hay sesión, te manda al Login.
 const RutaProtegida = ({ children }: { children: JSX.Element }) => {
@@ -19,7 +20,6 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         
-        {/* Todas las rutas importantes ahora están envueltas en RutaProtegida */}
         <Route path="/dashboard" element={
           <RutaProtegida><Dashboard /></RutaProtegida>
         } />
@@ -28,8 +28,13 @@ function App() {
           <RutaProtegida><PlanillaViewBalance /></RutaProtegida>
         } />
         
-        <Route path="/factura/:id" element={
-          <RutaProtegida><PlanillaViewFactura /></RutaProtegida>
+        {/* Rutas Separadas para Facturas */}
+        <Route path="/factura-compra/:id" element={
+          <RutaProtegida><PlanillaViewFacturaCompra /></RutaProtegida>
+        } />
+        
+        <Route path="/factura-venta/:id" element={
+          <RutaProtegida><PlanillaViewFacturaVenta /></RutaProtegida>
         } />
         
         <Route path="*" element={<Navigate to="/" replace />} />

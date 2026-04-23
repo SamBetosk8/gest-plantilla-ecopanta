@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
 import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags } from 'lucide-react';
@@ -22,7 +22,7 @@ const normalizarFecha = (fechaStr: string) => {
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-  if (year < 2024 || year > 2030) return null;
+  if (year < 2024 || year > 2030) return null; // FILTRO ANTI-AÑOS FANTASMAS
 
   const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return null;
@@ -56,10 +56,9 @@ export default function Dashboard() {
   const [vistaMenu, setVistaMenu] = useState<'PANEL' | 'USUARIOS'>('PANEL'); 
   
   const [drilldownTiempo, setDrilldownTiempo] = useState<string | null>(null);
-  const [modalFactura, setModalFactura] = useState<string | null>(null); // 'calama' o 'copiapo'
+  const [modalFactura, setModalFactura] = useState<string | null>(null); 
   
   const [mostrarPasswords, setMostrarPasswords] = useState<Record<string, boolean>>({});
-  
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('Empleado');
@@ -84,7 +83,6 @@ export default function Dashboard() {
     return () => { unsubPlanillas(); unsubUsuarios(); };
   }, []);
 
-  // Abre balances o crea si no existe
   const manejarClickBalance = async (idCompleto: string) => {
     const existe = planillas.find(p => p.id === idCompleto);
     if (existe) {
@@ -98,20 +96,20 @@ export default function Dashboard() {
     }
   };
 
-  // Abre facturas (Compras o Ventas) o crea si no existe
-  const abrirFacturaEspecifica = async (tipo: 'compras' | 'ventas') => {
+  // Creación separada de Compras y Ventas en Base de Datos
+  const abrirFacturaEspecifica = async (tipo: 'compra' | 'venta') => {
     if (!modalFactura) return;
     const idCompleto = `facturas-${tipo}-${modalFactura}`;
     const existe = planillas.find(p => p.id === idCompleto);
     
     if (existe) {
-      navigate(`/factura/${idCompleto}`);
+      navigate(`/factura-${tipo}/${idCompleto}`);
     } else {
       await setDoc(doc(db, 'planillas', idCompleto), {
         creado: new Date().toISOString(), creador: userName,
         hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [] }]
       });
-      navigate(`/factura/${idCompleto}`);
+      navigate(`/factura-${tipo}/${idCompleto}`);
     }
     setModalFactura(null);
   };
@@ -140,6 +138,7 @@ export default function Dashboard() {
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
+      // Ignora las facturas para el gráfico de ingresos
       if (p.id.includes('factura')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -191,6 +190,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
+      {/* MENÚ LATERAL */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
         <div className="p-6 border-b border-slate-100">
           <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
@@ -223,6 +223,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
+              {/* LAS 4 PLANILLAS CLÁSICAS */}
               <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                 {PLANILLAS_FIJAS.map((pf) => {
@@ -249,6 +250,7 @@ export default function Dashboard() {
                 })}
               </div>
 
+              {/* GRÁFICA ADAPTATIVA */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 mb-10">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6 border-b border-slate-100 pb-6">
                   <div>
@@ -384,7 +386,7 @@ export default function Dashboard() {
             
             <div className="flex flex-col gap-4 relative z-10">
               <button 
-                onClick={() => abrirFacturaEspecifica('compras')} 
+                onClick={() => abrirFacturaEspecifica('compra')} 
                 className="bg-purple-50 border border-purple-200 text-purple-800 p-5 rounded-2xl font-black text-lg flex items-center justify-between hover:bg-purple-600 hover:text-white transition-all group shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-4">
@@ -394,7 +396,7 @@ export default function Dashboard() {
               </button>
               
               <button 
-                onClick={() => abrirFacturaEspecifica('ventas')} 
+                onClick={() => abrirFacturaEspecifica('venta')} 
                 className="bg-blue-50 border border-blue-200 text-blue-800 p-5 rounded-2xl font-black text-lg flex items-center justify-between hover:bg-blue-600 hover:text-white transition-all group shadow-sm hover:shadow-md"
               >
                 <div className="flex items-center gap-4">
