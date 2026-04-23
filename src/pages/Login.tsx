@@ -17,10 +17,13 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Puerta trasera para la primera vez (Si no hay usuarios, crea el admin)
-      if (username === 'admin' && password === 'admin') {
+      // Limpiamos espacios y convertimos a minúsculas para comparar siempre igual
+      const inputUser = username.trim().toLowerCase();
+
+      // Puerta trasera para la primera vez (Crea el admin si no existe)
+      if (inputUser === 'admin' && password === 'admin') {
         await setDoc(doc(db, 'usuarios', 'admin'), {
-          username: 'admin',
+          username: 'Admin',
           password: 'admin',
           role: 'Administrador',
           creado: new Date().toISOString()
@@ -39,9 +42,11 @@ export default function Login() {
 
       snapshot.forEach((doc) => {
         const data = doc.data();
-        if (data.username === username && data.password === password) {
+        
+        // Compara ignorando mayúsculas y minúsculas
+        if (data.username && data.username.toLowerCase() === inputUser && data.password === password) {
           usuarioValido = true;
-          nombreReal = data.username;
+          nombreReal = data.username; // Guardamos el nombre original con sus mayúsculas
         }
       });
 
@@ -94,7 +99,7 @@ export default function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:bg-white outline-none transition-all font-medium text-slate-700 placeholder-slate-400"
-                placeholder="Ingresa tu usuario"
+                placeholder="Ingresa tu usuario (Ej: Alan)"
                 required
               />
             </div>
@@ -129,10 +134,6 @@ export default function Login() {
             )}
           </button>
         </form>
-
-        <div className="mt-8 text-center">
-          <p className="text-xs text-slate-400 font-medium">Protegido con encriptación segura v2.0</p>
-        </div>
       </div>
     </div>
   );

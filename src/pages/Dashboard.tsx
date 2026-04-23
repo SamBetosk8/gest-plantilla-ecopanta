@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
-import { FileSpreadsheet, Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft } from 'lucide-react';
+import { FileSpreadsheet, Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const parseCurrency = (val: any) => {
@@ -23,7 +23,6 @@ const normalizarFecha = (fechaStr: string) => {
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
   
-  // FILTRO ANTI-INVENTOS: Solo permite datos de años lógicos para tu empresa
   if (year < 2024 || year > 2030) return null;
 
   const d = new Date(year, month - 1, day);
@@ -58,8 +57,10 @@ export default function Dashboard() {
   const [vistaTiempo, setVistaTiempo] = useState<'MES' | 'SEMANA'>('MES');
   const [vistaMenu, setVistaMenu] = useState<'PANEL' | 'USUARIOS'>('PANEL'); 
   
-  // ESTADO PARA EL DRILL-DOWN (Clic en gráfico)
   const [drilldownTiempo, setDrilldownTiempo] = useState<string | null>(null);
+  
+  // Estado para controlar qué contraseñas son visibles
+  const [mostrarPasswords, setMostrarPasswords] = useState<Record<string, boolean>>({});
   
   // Estados para nuevo usuario
   const [newUsername, setNewUsername] = useState('');
@@ -116,14 +117,13 @@ export default function Dashboard() {
     }
   };
 
-  // --- MOTOR DE GRÁFICOS (PRINCIPAL Y DRILL-DOWN) ---
+  // --- MOTOR DE GRÁFICOS ---
   const { listaEmpresas, datosGraficaGlobal, datosDrilldown } = useMemo(() => {
     const empresasSet = new Set<string>();
     const agrupadoGlobal: any = {};
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Solo tomamos balances para las gráficas de ingresos
       if (p.id.includes('factura')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -131,21 +131,17 @@ export default function Dashboard() {
           const vNeta = parseCurrency(row.ventaNeta); 
           const vBalance = parseCurrency(row.balanceIngreso);
           
-          // Ignoramos filas totalmente vacías
           if (vNeta === 0 && vBalance === 0) return;
 
           const emp = String(row.empresa || row.cliente || 'SIN CLIENTE').trim().toUpperCase();
           const f = normalizarFecha(row.fecha);
           
-          // Si la fecha es inválida o fantasma, se ignora
           if (!f) return;
-
           empresasSet.add(emp);
 
           const timeKey = vistaTiempo === 'MES' ? f.mesKey : f.semanaKey;
           const timeLabel = vistaTiempo === 'MES' ? f.mesLabel : f.semanaLabel;
 
-          // 1. LLENAR DATOS GLOBALES (Meses/Semanas)
           if (empresaSeleccionada === 'TODAS' || empresaSeleccionada === emp) {
             if (!agrupadoGlobal[timeKey]) {
               agrupadoGlobal[timeKey] = { name: timeLabel, sortKey: timeKey, "Venta Neta": 0, "Balance Real": 0 };
@@ -154,7 +150,6 @@ export default function Dashboard() {
             agrupadoGlobal[timeKey]["Balance Real"] += vBalance;
           }
 
-          // 2. LLENAR DATOS DE DRILL-DOWN (División por clientes si se hizo clic en un mes)
           if (drilldownTiempo && timeLabel === drilldownTiempo) {
             if (!agrupadoDrilldown[emp]) {
               agrupadoDrilldown[emp] = { name: emp, "Venta Neta": 0, "Balance Real": 0 };
@@ -167,7 +162,6 @@ export default function Dashboard() {
     });
 
     const graficaOrdenadaGlobal = Object.values(agrupadoGlobal).sort((a: any, b: any) => a.sortKey.localeCompare(b.sortKey));
-    // Ordenar clientes de mayor a menor venta en el drilldown
     const graficaOrdenadaDrilldown = Object.values(agrupadoDrilldown).sort((a: any, b: any) => b["Venta Neta"] - a["Venta Neta"]);
 
     return { 
@@ -178,13 +172,10 @@ export default function Dashboard() {
   }, [planillas, empresaSeleccionada, vistaTiempo, drilldownTiempo]);
 
   const filteredPlanillas = planillas.filter(p => p.id.includes(searchTerm.toLowerCase()) && !PLANILLAS_FIJAS.find(pf => pf.id === p.id));
-
-  // Renderizar la gráfica correspondiente
   const datosActuales = drilldownTiempo ? datosDrilldown : datosGraficaGlobal;
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      {/* MENÚ LATERAL */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
         <div className="p-6 border-b border-slate-100">
           <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
@@ -204,7 +195,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ÁREA PRINCIPAL */}
       <div className="flex-1 overflow-auto">
         <div className="p-6 md:p-10 max-w-7xl mx-auto">
 
@@ -221,7 +211,6 @@ export default function Dashboard() {
                 </button>
               </div>
 
-              {/* LAS 4 PLANILLAS CLÁSICAS */}
               <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                 {PLANILLAS_FIJAS.map((pf) => {
@@ -252,10 +241,8 @@ export default function Dashboard() {
                 })}
               </div>
 
-              {/* --- GRÁFICA ADAPTATIVA E INTERACTIVA --- */}
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 mb-10">
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-8 gap-6 border-b border-slate-100 pb-6">
-                  
                   <div>
                     <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
                       <div className="p-2 bg-green-50 rounded-lg text-green-600"><BarChart3 size={24} /></div> 
@@ -263,7 +250,6 @@ export default function Dashboard() {
                     </h2>
                     {!drilldownTiempo && <p className="text-sm font-medium text-blue-500 mt-2 ml-12 animate-pulse">💡 Haz clic en una barra para dividir por clientes</p>}
                   </div>
-                  
                   <div className="flex flex-wrap gap-3 w-full lg:w-auto">
                     {drilldownTiempo ? (
                       <button onClick={() => setDrilldownTiempo(null)} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-slate-900 transition-all shadow-md">
@@ -275,7 +261,6 @@ export default function Dashboard() {
                           <option value="TODAS">TODOS LOS CLIENTES (GLOBAL)</option>
                           {listaEmpresas.map(e => <option key={e} value={e}>{e}</option>)}
                         </select>
-                        
                         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
                           <button onClick={() => setVistaTiempo('MES')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'MES' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>MES</button>
                           <button onClick={() => setVistaTiempo('SEMANA')} className={`flex-1 sm:flex-none px-6 py-2 text-xs font-black rounded-lg transition-all ${vistaTiempo === 'SEMANA' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500'}`}>SEMANA</button>
@@ -288,15 +273,7 @@ export default function Dashboard() {
                 <div className="h-80 w-full">
                   {datosActuales.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart 
-                        data={datosActuales}
-                        onClick={(state) => {
-                          if (!drilldownTiempo && state && state.activeLabel) {
-                            setDrilldownTiempo(state.activeLabel as string);
-                          }
-                        }}
-                        className={!drilldownTiempo ? "cursor-pointer" : ""}
-                      >
+                      <BarChart data={datosActuales} onClick={(state) => { if (!drilldownTiempo && state && state.activeLabel) setDrilldownTiempo(state.activeLabel as string); }} className={!drilldownTiempo ? "cursor-pointer" : ""}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} dy={10} />
                         <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12, fontWeight: 600}} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} dx={-10} />
@@ -312,7 +289,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* OTRAS PLANILLAS (EXTRA) */}
               {filteredPlanillas.length > 0 && (
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50"><h2 className="text-xl font-black text-slate-800">Otras Planillas Creadas</h2></div>
@@ -346,7 +322,7 @@ export default function Dashboard() {
                   <form onSubmit={crearUsuario} className="space-y-5">
                     <div>
                       <label className="text-sm font-bold text-slate-700 block mb-2">Nombre de Usuario</label>
-                      <input type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Juan Perez" />
+                      <input type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Alan" />
                     </div>
                     <div>
                       <label className="text-sm font-bold text-slate-700 block mb-2">Contraseña</label>
@@ -376,8 +352,14 @@ export default function Dashboard() {
                           </div>
                           <div>
                             <h4 className="font-bold text-slate-800 text-lg capitalize">{u.username}</h4>
-                            <p className="text-sm text-slate-500 font-medium flex items-center gap-2">
-                              <Key size={14} /> Contraseña: <span className="bg-slate-100 px-2 rounded text-slate-700">{u.password}</span>
+                            <p className="text-sm text-slate-500 font-medium flex items-center gap-2 mt-1">
+                              <Key size={14} /> Contraseña: 
+                              <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 flex items-center gap-2 font-mono tracking-widest">
+                                {mostrarPasswords[u.id] ? u.password : '••••••••'}
+                                <button onClick={() => setMostrarPasswords(prev => ({...prev, [u.id]: !prev[u.id]}))} className="text-slate-400 hover:text-blue-500 transition-colors ml-1" title="Mostrar/Ocultar contraseña">
+                                  {mostrarPasswords[u.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                              </span>
                             </p>
                           </div>
                         </div>
