@@ -64,14 +64,14 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
       
-      {/* Fondo decorativo con blobs */}
+      {/* Fondo decorativo con animaciones sutiles */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
       
       <div className="bg-white/80 backdrop-blur-xl p-8 md:p-12 rounded-3xl shadow-2xl w-full max-w-lg border border-white relative z-10">
         
         <div className="text-center mb-10 space-y-3">
-          {/* AQUÍ ESTÁ EL CAMBIO DE TAMAÑO DEL LOGO EN LOGIN */}
+          {/* EL LOGO GIGANTE Y CENTRADO */}
           <div className="mx-auto w-40 h-40 bg-white rounded-3xl flex items-center justify-center shadow-lg shadow-green-500/10 mb-8 p-1.5 transform transition hover:scale-105 border border-slate-100">
             <img src={logo} alt="Ecopanta Logo" className="w-full h-full object-contain rounded-2xl" />
           </div>

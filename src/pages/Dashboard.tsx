@@ -99,7 +99,6 @@ export default function Dashboard() {
     }
   };
 
-  // Creación separada de Compras y Ventas en Base de Datos
   const abrirFacturaEspecifica = async (tipo: 'compra' | 'venta') => {
     if (!modalFactura) return;
     const idCompleto = `facturas-${tipo}-${modalFactura}`;
@@ -134,7 +133,6 @@ export default function Dashboard() {
     }
   };
 
-  // --- MOTOR DE GRÁFICOS ---
   const { listaEmpresas, datosGraficaGlobal, datosDrilldown } = useMemo(() => {
     const empresasSet = new Set<string>();
     const agrupadoGlobal: any = {};
@@ -196,7 +194,6 @@ export default function Dashboard() {
       {/* MENÚ LATERAL CON LOGO CENTRADO Y GRANDE */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
         <div className="p-8 border-b border-slate-100 flex flex-col items-center gap-4 text-center">
-          {/* AQUÍ ESTÁ EL CAMBIO DE TAMAÑO DEL LOGO */}
           <img src={logo} alt="Ecopanta" className="w-32 h-32 object-contain rounded-3xl shadow-lg border-4 border-white transition-transform hover:scale-105" />
           <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
         </div>
