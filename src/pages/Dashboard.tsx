@@ -14,7 +14,7 @@ const parseCurrency = (val: any) => {
   return isNaN(num) ? 0 : num;
 };
 
-// LECTOR DE FECHAS
+// LECTOR DE FECHAS ESTRICTO Y BLINDADO CONTRA DATOS FANTASMAS
 const normalizarFecha = (fechaStr: string) => {
   if (!fechaStr || typeof fechaStr !== 'string' || !fechaStr.includes('-')) return null;
   const parts = fechaStr.split('-');
@@ -25,7 +25,7 @@ const normalizarFecha = (fechaStr: string) => {
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-  if (year < 2024 || year > 2030) return null;
+  if (year < 2024 || year > 2030) return null; // FILTRO ANTI-AÑOS FANTASMAS
 
   const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return null;
@@ -99,6 +99,7 @@ export default function Dashboard() {
     }
   };
 
+  // Creación separada de Compras y Ventas en Base de Datos
   const abrirFacturaEspecifica = async (tipo: 'compra' | 'venta') => {
     if (!modalFactura) return;
     const idCompleto = `facturas-${tipo}-${modalFactura}`;
@@ -133,12 +134,14 @@ export default function Dashboard() {
     }
   };
 
+  // --- MOTOR DE GRÁFICOS ---
   const { listaEmpresas, datosGraficaGlobal, datosDrilldown } = useMemo(() => {
     const empresasSet = new Set<string>();
     const agrupadoGlobal: any = {};
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
+      // Ignora las facturas para el gráfico de ingresos
       if (p.id.includes('factura')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -190,10 +193,11 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      {/* MENÚ LATERAL CON LOGO */}
+      {/* MENÚ LATERAL CON LOGO CENTRADO Y GRANDE */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
-        <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <img src={logo} alt="Ecopanta" className="w-10 h-10 object-contain rounded-lg border border-slate-100 shadow-sm" />
+        <div className="p-8 border-b border-slate-100 flex flex-col items-center gap-4 text-center">
+          {/* AQUÍ ESTÁ EL CAMBIO DE TAMAÑO DEL LOGO */}
+          <img src={logo} alt="Ecopanta" className="w-32 h-32 object-contain rounded-3xl shadow-lg border-4 border-white transition-transform hover:scale-105" />
           <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
         </div>
         <nav className="flex-1 p-4 space-y-2">
