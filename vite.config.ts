@@ -1,20 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(), // ¡ESTA ES LA LÍNEA QUE FALTABA PARA QUE VUELVA EL COLOR!
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'logo.jpg'], // Archivos para guardar sin conexión
+      includeAssets: ['favicon.ico', 'logo.jpg'], 
       manifest: {
         name: 'Ecopanta Gestión',
         short_name: 'Ecopanta',
         description: 'Sistema de Gestión de Planillas y Facturas',
         theme_color: '#ffffff',
         background_color: '#f8fafc',
-        display: 'standalone', // Hace que se abra como App nativa, sin la barra de Google Chrome
+        display: 'standalone', 
         icons: [
           {
             src: '/icon-192x192.png',
