@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags } from 'lucide-react';
+import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+// IMPORTAMOS TU LOGO
+import logo from '../assets/logo.jpg';
 
 const parseCurrency = (val: any) => {
   if (!val) return 0;
@@ -11,7 +14,7 @@ const parseCurrency = (val: any) => {
   return isNaN(num) ? 0 : num;
 };
 
-// LECTOR DE FECHAS ESTRICTO Y BLINDADO CONTRA DATOS FANTASMAS
+// LECTOR DE FECHAS
 const normalizarFecha = (fechaStr: string) => {
   if (!fechaStr || typeof fechaStr !== 'string' || !fechaStr.includes('-')) return null;
   const parts = fechaStr.split('-');
@@ -22,7 +25,7 @@ const normalizarFecha = (fechaStr: string) => {
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-  if (year < 2024 || year > 2030) return null; // FILTRO ANTI-AÑOS FANTASMAS
+  if (year < 2024 || year > 2030) return null;
 
   const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return null;
@@ -96,7 +99,6 @@ export default function Dashboard() {
     }
   };
 
-  // Creación separada de Compras y Ventas en Base de Datos
   const abrirFacturaEspecifica = async (tipo: 'compra' | 'venta') => {
     if (!modalFactura) return;
     const idCompleto = `facturas-${tipo}-${modalFactura}`;
@@ -131,14 +133,12 @@ export default function Dashboard() {
     }
   };
 
-  // --- MOTOR DE GRÁFICOS ---
   const { listaEmpresas, datosGraficaGlobal, datosDrilldown } = useMemo(() => {
     const empresasSet = new Set<string>();
     const agrupadoGlobal: any = {};
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Ignora las facturas para el gráfico de ingresos
       if (p.id.includes('factura')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -190,9 +190,10 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      {/* MENÚ LATERAL */}
+      {/* MENÚ LATERAL CON LOGO */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
-        <div className="p-6 border-b border-slate-100">
+        <div className="p-6 border-b border-slate-100 flex items-center gap-3">
+          <img src={logo} alt="Ecopanta" className="w-10 h-10 object-contain rounded-lg border border-slate-100 shadow-sm" />
           <h1 className="text-2xl font-black text-green-600 tracking-tight">Ecopanta</h1>
         </div>
         <nav className="flex-1 p-4 space-y-2">
@@ -258,7 +259,11 @@ export default function Dashboard() {
                       <div className="p-2 bg-green-50 rounded-lg text-green-600"><BarChart3 size={24} /></div> 
                       {drilldownTiempo ? `Desglose de Clientes: ${drilldownTiempo}` : 'Analítica de Ventas'}
                     </h2>
-                    {!drilldownTiempo && <p className="text-sm font-medium text-blue-500 mt-2 ml-12 animate-pulse">💡 Haz clic en una barra para dividir por clientes</p>}
+                    {!drilldownTiempo && (
+                      <p className="text-sm font-medium text-slate-500 mt-2 ml-12 animate-pulse flex items-center gap-1.5">
+                        <Lightbulb size={16} className="text-amber-500" /> Haz clic en una barra para dividir por clientes
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-3 w-full lg:w-auto">
                     {drilldownTiempo ? (

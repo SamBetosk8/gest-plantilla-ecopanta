@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Leaf, Lock, User, LogIn, AlertCircle } from 'lucide-react';
+import { Lock, User, LogIn, AlertCircle } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
+
+// IMPORTAMOS TU LOGO
+import logo from '../assets/logo.jpg';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -17,10 +20,8 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Limpiamos espacios y convertimos a minúsculas para comparar siempre igual
       const inputUser = username.trim().toLowerCase();
 
-      // Puerta trasera para la primera vez (Crea el admin si no existe)
       if (inputUser === 'admin' && password === 'admin') {
         await setDoc(doc(db, 'usuarios', 'admin'), {
           username: 'Admin',
@@ -33,7 +34,6 @@ export default function Login() {
         return;
       }
 
-      // Verificación real en la base de datos
       const usuariosRef = collection(db, 'usuarios');
       const snapshot = await getDocs(usuariosRef);
       
@@ -42,11 +42,9 @@ export default function Login() {
 
       snapshot.forEach((doc) => {
         const data = doc.data();
-        
-        // Compara ignorando mayúsculas y minúsculas
         if (data.username && data.username.toLowerCase() === inputUser && data.password === password) {
           usuarioValido = true;
-          nombreReal = data.username; // Guardamos el nombre original con sus mayúsculas
+          nombreReal = data.username; 
         }
       });
 
@@ -66,15 +64,15 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
       
-      {/* Fondo Decorativo */}
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
       
       <div className="bg-white/80 backdrop-blur-xl p-8 md:p-10 rounded-3xl shadow-2xl w-full max-w-md border border-white relative z-10">
         
         <div className="text-center mb-10">
-          <div className="mx-auto w-16 h-16 bg-gradient-to-tr from-green-500 to-green-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/30 mb-6 transform transition hover:scale-105">
-            <Leaf size={32} className="text-white" />
+          <div className="mx-auto w-28 h-28 bg-white rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/20 mb-6 p-2 transform transition hover:scale-105 border border-slate-100">
+            {/* AQUÍ VA TU LOGO */}
+            <img src={logo} alt="Ecopanta Logo" className="w-full h-full object-contain rounded-xl" />
           </div>
           <h1 className="text-3xl font-black text-slate-800 tracking-tight">Ecopanta</h1>
           <p className="text-slate-500 font-medium mt-2">Sistema de Gestión de Planillas</p>
