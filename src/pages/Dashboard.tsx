@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb } from 'lucide-react';
+import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb, Landmark } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 // IMPORTAMOS TU LOGO
@@ -25,7 +25,7 @@ const normalizarFecha = (fechaStr: string) => {
   const year = parseInt(parts[2], 10);
 
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-  if (year < 2024 || year > 2030) return null; // FILTRO ANTI-AÑOS FANTASMAS
+  if (year < 2024 || year > 2030) return null; 
 
   const d = new Date(year, month - 1, day);
   if (isNaN(d.getTime())) return null;
@@ -43,11 +43,13 @@ const normalizarFecha = (fechaStr: string) => {
   };
 };
 
+// AGREGAMOS EL CENTRO DE COSTOS A LAS PLANILLAS FIJAS
 const PLANILLAS_FIJAS = [
   { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance', ciudad: 'calama' },
   { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
   { id: 'facturas-calama', titulo: 'FACTURAS CALAMA', tipo: 'factura', ciudad: 'calama' },
-  { id: 'facturas-copiapo', titulo: 'FACTURAS COPIAPÓ', tipo: 'factura', ciudad: 'copiapo' }
+  { id: 'facturas-copiapo', titulo: 'FACTURAS COPIAPÓ', tipo: 'factura', ciudad: 'copiapo' },
+  { id: 'centro-costos-general', titulo: 'CENTRO DE COSTOS', tipo: 'costos', ciudad: 'general' }
 ];
 
 export default function Dashboard() {
@@ -116,6 +118,20 @@ export default function Dashboard() {
     setModalFactura(null);
   };
 
+  // NUEVA FUNCIÓN PARA ABRIR EL CENTRO DE COSTOS
+  const manejarClickCostos = async (idCompleto: string) => {
+    const existe = planillas.find(p => p.id === idCompleto);
+    if (existe) {
+      navigate(`/centro-costos/${idCompleto}`);
+    } else {
+      await setDoc(doc(db, 'planillas', idCompleto), {
+        creado: new Date().toISOString(), creador: userName,
+        hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [] }]
+      });
+      navigate(`/centro-costos/${idCompleto}`);
+    }
+  };
+
   const crearUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword) return;
@@ -133,14 +149,15 @@ export default function Dashboard() {
     }
   };
 
+  // --- MOTOR DE GRÁFICOS ---
   const { listaEmpresas, datosGraficaGlobal, datosDrilldown } = useMemo(() => {
     const empresasSet = new Set<string>();
     const agrupadoGlobal: any = {};
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Ignora las facturas para el gráfico de ingresos
-      if (p.id.includes('factura')) return;
+      // Ignora las facturas y el centro de costos para el gráfico de ingresos
+      if (p.id.includes('factura') || p.id.includes('costos')) return;
       
       (p.hojas || []).forEach((h: any) => {
         (h.rows || []).forEach((row: any) => {
@@ -212,7 +229,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto pb-20 md:pb-0">
         <div className="p-6 md:p-10 max-w-7xl mx-auto">
 
           {/* VISTA: PANEL PRINCIPAL */}
@@ -225,24 +242,40 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* LAS 4 PLANILLAS CLÁSICAS */}
+              {/* LAS PLANILLAS FIJAS */}
               <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+              
+              {/* Hemos ajustado las columnas para que quepan 5 tarjetas elegantemente */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
                 {PLANILLAS_FIJAS.map((pf) => {
                   const esFactura = pf.tipo === 'factura';
+                  const esCostos = pf.tipo === 'costos';
+                  
+                  // Lógica de colores según el tipo de planilla
+                  let bgColor = 'bg-blue-500';
+                  let gradColor = 'from-blue-500 to-blue-600';
+                  
+                  if (esFactura) {
+                    bgColor = 'bg-purple-500';
+                    gradColor = 'from-purple-500 to-purple-600';
+                  } else if (esCostos) {
+                    bgColor = 'bg-emerald-500';
+                    gradColor = 'from-emerald-500 to-emerald-600';
+                  }
 
                   return (
                     <button 
                       key={pf.id} 
                       onClick={() => {
                         if (esFactura) setModalFactura(pf.ciudad);
+                        else if (esCostos) manejarClickCostos(pf.id);
                         else manejarClickBalance(pf.id);
                       }} 
                       className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden"
                     >
-                      <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${esFactura ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
-                      <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 ${esFactura ? 'bg-gradient-to-br from-purple-500 to-purple-600' : 'bg-gradient-to-br from-blue-500 to-blue-600'}`}>
-                        {esFactura ? <FileText size={36} /> : <Wallet size={36} />}
+                      <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${bgColor}`}></div>
+                      <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 bg-gradient-to-br ${gradColor}`}>
+                        {esFactura ? <FileText size={36} /> : esCostos ? <Landmark size={36} /> : <Wallet size={36} />}
                       </div>
                       <div className="text-center z-10">
                         <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight leading-tight">{pf.titulo}</h3>
@@ -375,6 +408,22 @@ export default function Dashboard() {
           )}
 
         </div>
+      </div>
+
+      {/* MENÚ DE NAVEGACIÓN INFERIOR (SÓLO CELULARES) */}
+      <div className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around p-3 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] pb-safe">
+        <button onClick={() => setVistaMenu('PANEL')} className={`flex flex-col items-center gap-1 ${vistaMenu === 'PANEL' ? 'text-green-600' : 'text-slate-400'}`}>
+          <LayoutDashboard size={24} />
+          <span className="text-[10px] font-bold">Panel</span>
+        </button>
+        <button onClick={() => setVistaMenu('USUARIOS')} className={`flex flex-col items-center gap-1 ${vistaMenu === 'USUARIOS' ? 'text-blue-600' : 'text-slate-400'}`}>
+          <Users size={24} />
+          <span className="text-[10px] font-bold">Usuarios</span>
+        </button>
+        <button onClick={handleLogout} className="flex flex-col items-center gap-1 text-red-400 hover:text-red-600">
+          <X size={24} />
+          <span className="text-[10px] font-bold">Salir</span>
+        </button>
       </div>
 
       {/* MODAL DE SELECCIÓN (COMPRAS O VENTAS) */}
