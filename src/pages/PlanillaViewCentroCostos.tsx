@@ -59,7 +59,7 @@ export default function PlanillaViewCentroCostos() {
   const hojaActiva = hojas.find(h => h.id === hojaActivaId) || hojas[0];
   const presupuestoActual = hojaActiva.presupuesto || 0;
 
-  // --- CÁLCULOS DEL PANEL (DASHBOARD) ---
+  // --- CÁLCULOS DEL PANEL ---
   const totalGastado = useMemo(() => {
     return (hojaActiva.rows || []).reduce((sum: number, r: any) => sum + parseCurrency(r.monto), 0);
   }, [hojaActiva.rows]);
@@ -79,7 +79,7 @@ export default function PlanillaViewCentroCostos() {
     });
     return Object.keys(categorias)
       .map(k => ({ name: k, value: categorias[k] }))
-      .sort((a, b) => b.value - a.value); // Ordenar de mayor a menor
+      .sort((a, b) => b.value - a.value);
   }, [hojaActiva.rows]);
 
   // --- FIREBASE SYNC ---
@@ -137,7 +137,100 @@ export default function PlanillaViewCentroCostos() {
     setHojas(nuevasHojas); guardarEnNube(nuevasHojas);
   };
 
-  // --- COLUMNAS (TABLA DE REGISTROS) ---
+  const eliminarHoja = (hojaId: string) => {
+    if (hojas.length <= 1) return alert("No puedes eliminar la única hoja que queda.");
+    if (window.confirm("¿Estás seguro de que deseas ELIMINAR esta hoja y TODOS sus datos?")) {
+      const nuevasHojas = hojas.filter(h => h.id !== hojaId);
+      setHojas(nuevasHojas); setHojaActivaId(nuevasHojas[0].id); guardarEnNube(nuevasHojas);
+    }
+  };
+
+  // --- LAS FUNCIONES QUE FALTABAN ---
+  const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const modoReemplazo = window.confirm("¿Deseas REEMPLAZAR los datos actuales con los del Excel?");
+    
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const workbook = XLSX.read(evt.target?.result, { type: 'array' });
+      let hojasExtraidas: any[] = [];
+      let idBase = 1;
+
+      workbook.SheetNames.forEach((sheetName, sheetIndex) => {
+        const worksheet = workbook.Sheets[sheetName];
+        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
+        let hojaObj = { id: `hoja-${Date.now()}-${sheetIndex}`, nombre: sheetName, rows: [] as any[], presupuesto: 0 };
+        
+        let estado = 'BUSCANDO_TITULOS'; 
+        let mainHeaders: string[] = [];
+        let idxFecha = -1, idxConcepto = -1, idxCategoria = -1, idxResponsable = -1, idxMonto = -1;
+
+        for (let i = 0; i < rawData.length; i++) {
+          const rowArr = rawData[i] as string[];
+          const rowStr = rowArr.join(' ').toUpperCase();
+          if (!rowStr.trim()) continue;
+
+          if (estado === 'BUSCANDO_TITULOS') {
+            if (rowStr.includes('FECHA') && (rowStr.includes('CONCEPTO') || rowStr.includes('DETALLE') || rowStr.includes('MONTO'))) {
+              estado = 'EXTRAYENDO_DATOS';
+              mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
+              
+              idxFecha = mainHeaders.findIndex(h => h.includes('FECHA'));
+              idxConcepto = mainHeaders.findIndex(h => h.includes('CONCEPTO') || h.includes('DETALLE') || h.includes('DESCRIPCION'));
+              idxCategoria = mainHeaders.findIndex(h => h.includes('CATEGORIA') || h.includes('TIPO'));
+              idxResponsable = mainHeaders.findIndex(h => h.includes('RESPONSABLE') || h.includes('ENCARGADO'));
+              idxMonto = mainHeaders.findIndex(h => h.includes('MONTO') || h.includes('TOTAL') || h.includes('VALOR'));
+              continue;
+            }
+          }
+
+          if (estado === 'EXTRAYENDO_DATOS') {
+            if (rowStr.includes('TOTAL GENERAL') || rowStr.includes('RESUMEN')) {
+              estado = 'BUSCANDO_TITULOS'; 
+              continue;
+            }
+
+            const valFecha = parseExcelDate(rowArr[idxFecha]);
+            const valConcepto = idxConcepto !== -1 ? rowArr[idxConcepto] : '';
+            const valCategoria = idxCategoria !== -1 ? rowArr[idxCategoria] : '';
+            const valResponsable = idxResponsable !== -1 ? rowArr[idxResponsable] : '';
+            const valMonto = idxMonto !== -1 ? rowArr[idxMonto] : '0';
+
+            if (!valFecha && !valConcepto && parseCurrency(valMonto) === 0) continue;
+
+            hojaObj.rows.push({
+              id: idBase++, fecha: valFecha, concepto: valConcepto, categoria: valCategoria,
+              responsable: valResponsable, monto: valMonto, format: {}
+            });
+          }
+        }
+
+        if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
+        hojasExtraidas.push(hojaObj);
+      });
+
+      if (hojasExtraidas.length > 0) {
+        const nh = modoReemplazo ? hojasExtraidas : [...hojas, ...hojasExtraidas];
+        setHojas(nh); setHojaActivaId(nh[0].id); guardarEnNube(nh);
+      } else { alert("No se detectó la estructura de Costos. Revisa tu Excel."); }
+    };
+    reader.readAsArrayBuffer(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleCellClick = (args: any) => {
+    setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
+    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    set(presenceRef, { name: userName, editing: { row: args.row.id, column: args.column.key }, activeSheet: hojaActivaId });
+  };
+
+  const pintarCelda = (colorClass: string) => {
+    if (!celdaSeleccionada) return;
+    const pintarEn = (filas: any[]) => filas.map((fila: any) => fila.id === celdaSeleccionada.rowId ? { ...fila, format: { ...fila.format, [celdaSeleccionada.columnKey]: colorClass } } : fila);
+    const nh = hojas.map(h => h.id === hojaActivaId ? { ...h, rows: pintarEn(h.rows) } : h);
+    setHojas(nh); guardarEnNube(nh);
+  };
+
   const getCellClass = (row: any, columnKey: string) => {
     let classes = row.format?.[columnKey] || ''; 
     for (const key in activeUsers) {
@@ -174,12 +267,23 @@ export default function PlanillaViewCentroCostos() {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 mr-2">
+            <PaintBucket size={16} className="text-slate-400 mx-1" />
+            <button onClick={() => pintarCelda('bg-yellow-100 text-yellow-900')} className="w-5 h-5 rounded bg-yellow-100 border border-yellow-300" />
+            <button onClick={() => pintarCelda('bg-emerald-100 text-emerald-900')} className="w-5 h-5 rounded bg-emerald-100 border border-emerald-300" />
+            <button onClick={() => pintarCelda('bg-red-100 text-red-900')} className="w-5 h-5 rounded bg-red-100 border border-red-300" />
+            <button onClick={() => pintarCelda('')} className="w-5 h-5 rounded bg-white border border-slate-300 text-[10px] flex items-center justify-center text-slate-400">✖</button>
+          </div>
           <div className="flex -space-x-2 mr-4">
             {Object.values(activeUsers).map((u: any) => (
               <div key={u.name} title={u.name} className={`inline-flex h-8 w-8 rounded-full ring-2 ring-white items-center justify-center text-xs font-bold text-white shadow-sm ${obtenerColorUsuario(u.name).bg}`}>{u.name.charAt(0).toUpperCase()}</div>
             ))}
           </div>
-          <button onClick={agregarFila} className="flex items-center gap-2 text-white px-5 py-2 text-sm font-bold rounded-xl shadow-md bg-emerald-600 hover:bg-emerald-700 transition-all hover:-translate-y-0.5"><Plus size={18} /> Nuevo Gasto</button>
+          
+          <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
+          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 text-slate-600 bg-white border border-slate-200 px-4 py-2 text-sm font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-all"><Upload size={16} /> Importar</button>
+          
+          <button onClick={agregarFila} className="flex items-center gap-2 text-white px-5 py-2 text-sm font-bold rounded-xl shadow-md bg-emerald-600 hover:bg-emerald-700 transition-all hover:-translate-y-0.5"><Plus size={18} /> Gasto</button>
         </div>
       </div>
 
@@ -280,7 +384,7 @@ export default function PlanillaViewCentroCostos() {
           <div className="w-full lg:w-2/3 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden min-h-[400px]">
             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
               <h3 className="font-black text-slate-800">Registro de Movimientos</h3>
-              <p className="text-xs font-bold text-slate-400 bg-slate-200 px-3 py-1 rounded-full">Escribe "Sueldos" o "Materiales" en Categoría para agrupar</p>
+              <p className="text-xs font-bold text-slate-400 bg-slate-200 px-3 py-1 rounded-full hidden sm:block">Escribe "Sueldos" o "Materiales" en Categoría para agrupar</p>
             </div>
             <div className="flex-1 min-h-0 overflow-x-auto w-full p-2">
               <DataGrid columns={columnas} rows={hojaActiva.rows} onRowsChange={procesarCambiosMain} onCellClick={handleCellClick} className="h-full w-full min-w-[800px] border-none" style={{ minHeight: 0 }} />
