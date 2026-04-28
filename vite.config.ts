@@ -6,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss(), // ¡ESTA ES LA LÍNEA QUE FALTABA PARA QUE VUELVA EL COLOR!
+    tailwindcss(), 
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'logo.jpg'], 
