@@ -10,6 +10,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'logo.jpg'], 
+      workbox: {
+        maximumFileSizeToCacheInBytes: 4000000
+      },
       manifest: {
         name: 'Ecopanta Gestión',
         short_name: 'Ecopanta',
