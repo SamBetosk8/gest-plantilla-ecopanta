@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, Plus, FileText, X, Edit2, Landmark, Wallet, TrendingDown, PiggyBank, PaintBucket } from 'lucide-react';
+import { ArrowLeft, Upload, Plus, FileText, X, Edit2, Landmark, Wallet, TrendingDown, PiggyBank, PaintBucket, Download, FileDown } from 'lucide-react';
 import DataGrid, { textEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import * as XLSX from 'xlsx';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import 'react-data-grid/lib/styles.css';
 
 // --- UTILIDADES ---
@@ -145,7 +147,7 @@ export default function PlanillaViewCentroCostos() {
     }
   };
 
-  // --- LAS FUNCIONES QUE FALTABAN ---
+  // --- IMPORTACIÓN Y EXPORTACIÓN ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const modoReemplazo = window.confirm("¿Deseas REEMPLAZAR los datos actuales con los del Excel?");
@@ -174,7 +176,6 @@ export default function PlanillaViewCentroCostos() {
             if (rowStr.includes('FECHA') && (rowStr.includes('CONCEPTO') || rowStr.includes('DETALLE') || rowStr.includes('MONTO'))) {
               estado = 'EXTRAYENDO_DATOS';
               mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
-              
               idxFecha = mainHeaders.findIndex(h => h.includes('FECHA'));
               idxConcepto = mainHeaders.findIndex(h => h.includes('CONCEPTO') || h.includes('DETALLE') || h.includes('DESCRIPCION'));
               idxCategoria = mainHeaders.findIndex(h => h.includes('CATEGORIA') || h.includes('TIPO'));
@@ -185,11 +186,7 @@ export default function PlanillaViewCentroCostos() {
           }
 
           if (estado === 'EXTRAYENDO_DATOS') {
-            if (rowStr.includes('TOTAL GENERAL') || rowStr.includes('RESUMEN')) {
-              estado = 'BUSCANDO_TITULOS'; 
-              continue;
-            }
-
+            if (rowStr.includes('TOTAL GENERAL') || rowStr.includes('RESUMEN')) { estado = 'BUSCANDO_TITULOS'; continue; }
             const valFecha = parseExcelDate(rowArr[idxFecha]);
             const valConcepto = idxConcepto !== -1 ? rowArr[idxConcepto] : '';
             const valCategoria = idxCategoria !== -1 ? rowArr[idxCategoria] : '';
@@ -197,14 +194,9 @@ export default function PlanillaViewCentroCostos() {
             const valMonto = idxMonto !== -1 ? rowArr[idxMonto] : '0';
 
             if (!valFecha && !valConcepto && parseCurrency(valMonto) === 0) continue;
-
-            hojaObj.rows.push({
-              id: idBase++, fecha: valFecha, concepto: valConcepto, categoria: valCategoria,
-              responsable: valResponsable, monto: valMonto, format: {}
-            });
+            hojaObj.rows.push({ id: idBase++, fecha: valFecha, concepto: valConcepto, categoria: valCategoria, responsable: valResponsable, monto: valMonto, format: {} });
           }
         }
-
         if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
         hojasExtraidas.push(hojaObj);
       });
@@ -218,6 +210,62 @@ export default function PlanillaViewCentroCostos() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // EXPORTAR A EXCEL
+  const exportarExcel = () => {
+    const datosMapeados = hojaActiva.rows.map((r: any) => ({
+      "CÓDIGO": `SV-${r.id}`,
+      "FECHA": r.fecha || '',
+      "CONCEPTO": r.concepto || '',
+      "CATEGORÍA": r.categoria || '',
+      "RESPONSABLE": r.responsable || '',
+      "MONTO": parseCurrency(r.monto)
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(datosMapeados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, hojaActiva.nombre);
+    XLSX.writeFile(wb, `Centro_Costos_${hojaActiva.nombre}.xlsx`);
+  };
+
+  // EXPORTAR A PDF
+  const exportarPDF = () => {
+    const doc = new jsPDF();
+    
+    // Títulos del PDF
+    doc.setFontSize(18);
+    doc.setTextColor(6, 78, 59); // Emerald 900
+    doc.text(`Reporte: Centro de Costos`, 14, 20);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Hoja: ${hojaActiva.nombre}`, 14, 28);
+    doc.text(`Presupuesto Base: ${formatMoney(presupuestoActual)}`, 14, 34);
+    doc.text(`Total Gastado: ${formatMoney(totalGastado)}`, 14, 40);
+    doc.text(`Saldo Disponible: ${formatMoney(saldoDisponible)}`, 14, 46);
+
+    const tableData = hojaActiva.rows.map((r: any) => [
+      `SV-${r.id}`, 
+      r.fecha || '', 
+      r.concepto || '', 
+      r.categoria || '', 
+      r.responsable || '', 
+      formatMoney(r.monto)
+    ]);
+
+    autoTable(doc, {
+      startY: 55,
+      head: [['CÓDIGO', 'FECHA', 'CONCEPTO', 'CATEGORÍA', 'RESPONSABLE', 'MONTO']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [16, 185, 129] }, // Emerald 500
+      styles: { fontSize: 9 },
+      columnStyles: { 5: { halign: 'right' } } // Alinear monto a la derecha
+    });
+
+    doc.save(`Reporte_Costos_${hojaActiva.nombre}.pdf`);
+  };
+
+  // --- CELDAS Y ESTILOS ---
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
     const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
@@ -256,34 +304,40 @@ export default function PlanillaViewCentroCostos() {
       <style>{`.rdg { --rdg-border-color: #e2e8f0; height: 100%; border: none; border-radius: 12px;} .rdg-cell { border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; padding: 0 12px; } .rdg-header-cell { background-color: #f8fafc; border-bottom: 2px solid #cbd5e1; font-weight: 800; color: #475569; } `}</style>
 
       {/* --- TOOLBAR --- */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 flex items-center shrink-0 shadow-sm z-10">
+      <div className="bg-white border-b border-slate-200 px-4 py-3 flex items-center shrink-0 shadow-sm z-10 overflow-x-auto">
         <Link to="/dashboard" className="text-slate-400 hover:text-emerald-600 transition-colors mr-4"><ArrowLeft size={24} /></Link>
         <div className="flex items-center gap-3">
           <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600"><Landmark size={24} /></div>
           <div>
-            <h1 className="text-xl font-black uppercase text-slate-800 tracking-tight leading-none">{id?.replace(/-/g, ' ')}</h1>
+            <h1 className="text-xl font-black uppercase text-slate-800 tracking-tight leading-none min-w-[200px]">{id?.replace(/-/g, ' ')}</h1>
             <p className="text-xs font-bold text-slate-400 mt-0.5">Centro de Costos y Panel Financiero</p>
           </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 mr-2">
-            <PaintBucket size={16} className="text-slate-400 mx-1" />
-            <button onClick={() => pintarCelda('bg-yellow-100 text-yellow-900')} className="w-5 h-5 rounded bg-yellow-100 border border-yellow-300" />
-            <button onClick={() => pintarCelda('bg-emerald-100 text-emerald-900')} className="w-5 h-5 rounded bg-emerald-100 border border-emerald-300" />
-            <button onClick={() => pintarCelda('bg-red-100 text-red-900')} className="w-5 h-5 rounded bg-red-100 border border-red-300" />
-            <button onClick={() => pintarCelda('')} className="w-5 h-5 rounded bg-white border border-slate-300 text-[10px] flex items-center justify-center text-slate-400">✖</button>
-          </div>
-          <div className="flex -space-x-2 mr-4">
+        <div className="ml-auto flex items-center gap-2 md:gap-3">
+          
+          <div className="hidden lg:flex -space-x-2 mr-2">
             {Object.values(activeUsers).map((u: any) => (
               <div key={u.name} title={u.name} className={`inline-flex h-8 w-8 rounded-full ring-2 ring-white items-center justify-center text-xs font-bold text-white shadow-sm ${obtenerColorUsuario(u.name).bg}`}>{u.name.charAt(0).toUpperCase()}</div>
             ))}
           </div>
+
+          {/* BOTONES DE IMPORTACIÓN / EXPORTACIÓN */}
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-slate-600 hover:bg-white px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Importar Excel">
+              <Upload size={16} /> <span className="hidden sm:inline">Importar</span>
+            </button>
+            <div className="w-px bg-slate-200 mx-1"></div>
+            <button onClick={exportarExcel} className="flex items-center gap-1.5 text-emerald-600 hover:bg-white px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Exportar a Excel">
+              <Download size={16} /> <span className="hidden sm:inline">Excel</span>
+            </button>
+            <button onClick={exportarPDF} className="flex items-center gap-1.5 text-red-600 hover:bg-white px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Exportar a PDF">
+              <FileDown size={16} /> <span className="hidden sm:inline">PDF</span>
+            </button>
+          </div>
           
-          <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 text-slate-600 bg-white border border-slate-200 px-4 py-2 text-sm font-bold rounded-xl shadow-sm hover:bg-slate-50 transition-all"><Upload size={16} /> Importar</button>
-          
-          <button onClick={agregarFila} className="flex items-center gap-2 text-white px-5 py-2 text-sm font-bold rounded-xl shadow-md bg-emerald-600 hover:bg-emerald-700 transition-all hover:-translate-y-0.5"><Plus size={18} /> Gasto</button>
+          <button onClick={agregarFila} className="flex items-center gap-2 text-white px-4 md:px-5 py-2 text-sm font-bold rounded-xl shadow-md bg-emerald-600 hover:bg-emerald-700 transition-all hover:-translate-y-0.5 whitespace-nowrap"><Plus size={18} /> Gasto</button>
         </div>
       </div>
 
