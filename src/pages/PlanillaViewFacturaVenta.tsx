@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Upload, PaintBucket, Plus, FileText, X, Edit2, Tags, Download } from 'lucide-react';
+import { ArrowLeft, Upload, PaintBucket, Plus, FileText, X, Edit2, Tags, Download, FileDown } from 'lucide-react';
 import DataGrid, { textEditor } from 'react-data-grid';
 import { db, rtdb } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import 'react-data-grid/lib/styles.css';
 
 // --- UTILIDADES ---
@@ -26,7 +28,7 @@ const formatMoney = (val: any) => {
   return num === 0 ? '$ 0' : `$ ${num.toLocaleString('es-CL')}`;
 };
 
-// LECTOR ESTRICTO DE FECHAS
+// LECTOR ESTRICTO DE FECHAS (Arregla M/D/YYYY a DD-MM-YYYY)
 const parseExcelDate = (val: any) => {
   if (!val) return '';
   let str = String(val).trim();
@@ -144,7 +146,7 @@ export default function PlanillaViewFacturaVenta() {
     }
   };
 
-  // --- EXPORTAR A EXCEL ---
+  // --- EXPORTACIÓN (NUEVO) ---
   const exportarExcel = () => {
     const datosMapeados = hojaActiva.rows.map((r: any) => {
       if (isCopiapo) {
@@ -154,7 +156,7 @@ export default function PlanillaViewFacturaVenta() {
           "DESCRIPCIÓN": r.descripcion || '',
           "N° FACTURA": r.nFactura || '',
           "VALOR UNIT.": parseCurrency(r.valorUnitario),
-          "CLIENTE / PROVEEDOR": r.proveedor || '',
+          "CLIENTE/PROVEEDOR": r.proveedor || '',
           "CANT.": r.cantidad || '',
           "UNIDAD": r.unidad || '',
           "VALOR NETO": parseCurrency(r.valorNeto),
@@ -166,8 +168,8 @@ export default function PlanillaViewFacturaVenta() {
           "FECHA": r.fecha || '',
           "N° FACTURA": r.nFactura || '',
           "N° BOLETA": r.nBoleta || '',
-          "CLIENTE / PROVEEDOR": r.proveedor || '',
-          "DETALLE / INSUMO": r.insumo || '',
+          "CLIENTE/PROVEEDOR": r.proveedor || '',
+          "INSUMO/DETALLE": r.insumo || '',
           "TOTAL FACTURA": parseCurrency(r.totalFactura),
           "TOTAL BOLETA": parseCurrency(r.totalBoleta),
           "OBSERVACIONES": r.observaciones || ''
@@ -181,7 +183,45 @@ export default function PlanillaViewFacturaVenta() {
     XLSX.writeFile(wb, `Ventas_${id}_${hojaActiva.nombre}.xlsx`);
   };
 
-  // --- IMPORTAR EXCEL ---
+  const exportarPDF = () => {
+    const doc = new jsPDF('landscape');
+    
+    doc.setFontSize(16);
+    doc.text(`Reporte de Ventas - ${id?.replace('-', ' ').toUpperCase()}`, 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Hoja: ${hojaActiva.nombre}`, 14, 23);
+    doc.text(`Total Mes: ${formatMoney(sumaTotal)}`, 100, 23);
+
+    let head = [];
+    let tableData = [];
+
+    if (isCopiapo) {
+        head = [['FECHA', 'DESCRIPCIÓN', 'FACTURA', 'CLIENTE/PROVEEDOR', 'CANT', 'VALOR NETO']];
+        tableData = hojaActiva.rows.map((r: any) => [
+            r.fecha || '', r.descripcion || '', r.nFactura || '', 
+            r.proveedor || '', r.cantidad || '', formatMoney(r.valorNeto)
+        ]);
+    } else {
+        head = [['FECHA', 'FACTURA', 'BOLETA', 'CLIENTE/PROVEEDOR', 'TOTAL FACTURA', 'TOTAL BOLETA']];
+        tableData = hojaActiva.rows.map((r: any) => [
+            r.fecha || '', r.nFactura || '', r.nBoleta || '', 
+            r.proveedor || '', formatMoney(r.totalFactura), formatMoney(r.totalBoleta)
+        ]);
+    }
+
+    autoTable(doc, {
+      startY: 30,
+      head: head,
+      body: tableData,
+      theme: 'grid',
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] } // blue-600
+    });
+
+    doc.save(`Ventas_${hojaActiva.nombre}.pdf`);
+  };
+
+  // --- ESCÁNER DINÁMICO ADAPTADO PARA VENTAS ---
   const importarExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
     const modoReemplazo = window.confirm("¿Deseas REEMPLAZAR los datos actuales con los del Excel?");
@@ -193,12 +233,14 @@ export default function PlanillaViewFacturaVenta() {
       let idBase = 1;
 
       workbook.SheetNames.forEach((sheetName, sheetIndex) => {
+        // Ignorar hojas que sean explícitamente de "Compras"
         if (sheetName.toUpperCase().includes('COMPRA')) return;
 
         const worksheet = workbook.Sheets[sheetName];
         const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
         
         let hojaObj = { id: `hoja-${Date.now()}-${sheetIndex}`, nombre: sheetName, rows: [] as any[] };
+        
         let estado = 'BUSCANDO_TITULOS'; 
         let mainHeaders: string[] = [];
         
@@ -210,14 +252,19 @@ export default function PlanillaViewFacturaVenta() {
           const rowStr = rowArr.join(' ').toUpperCase();
           if (!rowStr.trim()) continue;
 
+          // 1. Detectar Títulos dinámicamente sin importar la fila
           if (estado === 'BUSCANDO_TITULOS') {
+            
+            // Si es COPIAPÓ
             if (isCopiapo && rowStr.includes('FECHA') && (rowStr.includes('DESCRIPCION') || rowStr.includes('DESCRIPCIÓN'))) {
               estado = 'EXTRAYENDO_DATOS';
               mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
+              
               idxFecha = mainHeaders.findIndex(h => h.includes('FECHA'));
               idxFactura = mainHeaders.findIndex(h => h === 'FACTURA' || h.includes('Nº FACTURA') || h.includes('N° FACTURA'));
               idxDesc = mainHeaders.findIndex(h => h.includes('DESCRIPCION') || h.includes('DESCRIPCIÓN'));
               idxValUnit = mainHeaders.findIndex(h => h.includes('VALOR UNIT') || h.includes('VALOR UNITARIO'));
+              // Modificado para aceptar tanto CLIENTE como PROVEEDOR
               idxProv = mainHeaders.findIndex(h => h.includes('PROVEEDOR') || h.includes('CLIENTE'));
               idxCant = mainHeaders.findIndex(h => h.includes('CANTIDAD') || h === 'CANT');
               idxUnidad = mainHeaders.findIndex(h => h.includes('UNIDAD'));
@@ -225,14 +272,19 @@ export default function PlanillaViewFacturaVenta() {
               idxOrden = mainHeaders.findIndex(h => h.includes('ORDEN'));
               continue;
             }
+            
+            // Si es CALAMA
             if (!isCopiapo && rowStr.includes('FECHA') && (rowStr.includes('FACTURA') || rowStr.includes('INSUMO') || rowStr.includes('TOTAL'))) {
               estado = 'EXTRAYENDO_DATOS';
               mainHeaders = rowArr.map(h => String(h).toUpperCase().trim());
+              
               idxFecha = mainHeaders.findIndex(h => h.includes('FECHA'));
               idxFactura = mainHeaders.findIndex(h => (h.includes('FACTURA') || h === 'FACTURAS') && !h.includes('TOTAL')); 
               idxBoleta = mainHeaders.findIndex(h => (h.includes('BOLETA') || h === 'BOLETAS') && !h.includes('TOTAL'));
               idxInsumo = mainHeaders.findIndex(h => h.includes('INSUMO') || h.includes('DETALLE'));
+              // Modificado para aceptar tanto CLIENTE como PROVEEDOR
               idxProv = mainHeaders.findIndex(h => h.includes('PROVEEDOR') || h.includes('CLIENTE'));
+              
               idxTotalGen = mainHeaders.findIndex(h => h === 'TOTAL');
               idxTotalFac = mainHeaders.findIndex(h => h.includes('TOTAL FACTURA') || h.includes('TOTAL FACTURAS'));
               idxTotalBol = mainHeaders.findIndex(h => h.includes('TOTAL BOLETA') || h.includes('TOTAL BOLETAS'));
@@ -240,8 +292,14 @@ export default function PlanillaViewFacturaVenta() {
             }
           }
 
+          // 2. Extraer Datos
           if (estado === 'EXTRAYENDO_DATOS') {
-            if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) { estado = 'BUSCANDO_TITULOS'; continue; }
+            // Si encuentra un total general en la primera columna, corta y busca nueva tabla
+            if (rowStr.includes('TOTAL') || rowStr.includes('RESUMEN')) {
+              estado = 'BUSCANDO_TITULOS'; 
+              continue;
+            }
+
             const valFecha = parseExcelDate(rowArr[idxFecha]);
             const valFactura = idxFactura !== -1 ? rowArr[idxFactura] : '';
             const valProv = idxProv !== -1 ? rowArr[idxProv] : '';
@@ -255,22 +313,33 @@ export default function PlanillaViewFacturaVenta() {
               const valOrden = idxOrden !== -1 ? rowArr[idxOrden] : '';
 
               if (!valFecha && !valDesc && !valProv && parseCurrency(valNeto) === 0) continue;
-              hojaObj.rows.push({ id: idBase++, fecha: valFecha, nFactura: valFactura, descripcion: valDesc, proveedor: valProv, valorUnitario: valUnit, cantidad: valCant, unidad: valUnidad, valorNeto: valNeto, nOrden: valOrden, format: {} });
+
+              hojaObj.rows.push({
+                id: idBase++, fecha: valFecha, nFactura: valFactura, descripcion: valDesc,
+                proveedor: valProv, valorUnitario: valUnit, cantidad: valCant, unidad: valUnidad,
+                valorNeto: valNeto, nOrden: valOrden, format: {}
+              });
             } else {
               const valInsumo = idxInsumo !== -1 ? rowArr[idxInsumo] : '';
               const valBoleta = idxBoleta !== -1 ? rowArr[idxBoleta] : '';
               let vTotalFactura = '0', vTotalBoleta = '0';
 
               if (idxTotalFac !== -1) vTotalFactura = rowArr[idxTotalFac] || '0';
-              else if (idxTotalGen !== -1) vTotalFactura = rowArr[idxTotalGen] || '0'; 
+              else if (idxTotalGen !== -1) vTotalFactura = rowArr[idxTotalGen] || '0'; // Fallback a columna 'TOTAL' general
               
               if (idxTotalBol !== -1) vTotalBoleta = rowArr[idxTotalBol] || '0';
 
               if (!valFecha && !valFactura && !valBoleta && !valInsumo && parseCurrency(vTotalFactura) === 0 && parseCurrency(vTotalBoleta) === 0) continue;
-              hojaObj.rows.push({ id: idBase++, fecha: valFecha, nFactura: valFactura, nBoleta: valBoleta, proveedor: valProv, insumo: valInsumo, totalFactura: vTotalFactura, totalBoleta: vTotalBoleta, observaciones: '', format: {} });
+
+              hojaObj.rows.push({
+                id: idBase++, fecha: valFecha, nFactura: valFactura, nBoleta: valBoleta, 
+                proveedor: valProv, insumo: valInsumo, totalFactura: vTotalFactura, 
+                totalBoleta: vTotalBoleta, observaciones: '', format: {}
+              });
             }
           }
         }
+
         if (hojaObj.rows.length === 0) hojaObj.rows.push(crearFilaVacia(idBase++));
         hojasExtraidas.push(hojaObj);
       });
@@ -308,7 +377,7 @@ export default function PlanillaViewFacturaVenta() {
     return classes;
   };
 
-  // --- COLUMNAS ---
+  // --- COLUMNAS (CALAMA VS COPIAPÓ) ---
   const colsCalama = useMemo(() => [
     { key: 'id', name: 'N°', width: 60, resizable: true },
     { key: 'fecha', name: 'FECHA', renderEditCell: textEditor, width: 120, resizable: true, cellClass: (r: any) => getCellClass(r, 'fecha') },
@@ -352,21 +421,27 @@ export default function PlanillaViewFacturaVenta() {
           <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border text-xs text-gray-400">✖</button>
         </div>
 
-        {/* BOTONES IMPORTAR Y EXPORTAR (NUEVO) */}
-        <div className="flex bg-white p-1 rounded-xl border border-gray-200 ml-2 shadow-sm">
+        {/* --- NUEVOS BOTONES DE EXPORTACIÓN Y ARCHIVOS --- */}
+        <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm ml-2">
           <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Importar Excel">
+          <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Importar Datos">
             <Upload size={16} /> <span className="hidden sm:inline">Importar</span>
           </button>
+          
           <div className="w-px bg-gray-200 mx-1"></div>
+          
           <button onClick={exportarExcel} className="flex items-center gap-1.5 text-green-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Exportar a Excel">
             <Download size={16} /> <span className="hidden sm:inline">Excel</span>
           </button>
+          
+          <button onClick={exportarPDF} className="flex items-center gap-1.5 text-red-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Exportar a PDF">
+            <FileDown size={16} /> <span className="hidden sm:inline">PDF</span>
+          </button>
         </div>
 
-        <button onClick={agregarFila} className="ml-auto flex items-center gap-1 text-white px-3 py-1.5 text-sm rounded-lg shadow transition-colors bg-blue-600 hover:bg-blue-700"><Plus size={16} /> Fila</button>
+        <button onClick={agregarFila} className="ml-2 flex items-center gap-1 text-white px-3 py-1.5 text-sm rounded-lg shadow transition-colors bg-blue-600 hover:bg-blue-700"><Plus size={16} /> Fila</button>
 
-        <div className="flex -space-x-2 ml-4 pr-4 hidden md:flex">
+        <div className="flex -space-x-2 ml-auto pr-4">
           {Object.values(activeUsers).map((u: any) => (
             <div key={u.name} title={u.name} className={`inline-flex h-8 w-8 rounded-full ring-2 ring-white items-center justify-center text-xs font-bold text-white ${obtenerColorUsuario(u.name).bg}`}>{u.name.charAt(0).toUpperCase()}</div>
           ))}
@@ -374,19 +449,19 @@ export default function PlanillaViewFacturaVenta() {
       </div>
 
       {/* --- TABLA PRINCIPAL --- */}
-      <div className="flex-1 bg-white border border-gray-300 shadow-sm relative flex flex-col rounded-t-lg min-h-0 z-0 overflow-x-auto max-w-[100vw]">
+      <div className="flex-1 bg-white border border-gray-300 shadow-sm relative flex flex-col rounded-t-lg min-h-0 z-0">
         <DataGrid 
            columns={isCopiapo ? colsCopiapo : colsCalama} 
            rows={hojaActiva.rows} 
            onRowsChange={procesarCambiosMain} 
            onCellClick={handleCellClick} 
-           className="h-full w-full min-w-[800px]" 
+           className="h-full w-full" 
            style={{ minHeight: 0 }} 
         />
       </div>
 
       {/* --- BARRA INFERIOR DE RESUMEN --- */}
-      <div className="bg-blue-900 text-white px-6 py-3 flex gap-4 md:gap-10 text-sm shrink-0 shadow-inner items-center flex-wrap">
+      <div className="bg-blue-900 text-white px-6 py-3 flex gap-10 text-sm shrink-0 shadow-inner items-center">
         <span className="font-bold uppercase tracking-widest text-blue-300">Resumen Ventas:</span>
         
         {isCopiapo ? (
