@@ -423,7 +423,7 @@ export default function PlanillaViewFacturaCompra() {
           <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border text-xs text-gray-400">✖</button>
         </div>
 
-        {/* --- NUEVOS BOTONES DE EXPORTACIÓN Y ARCHIVOS --- */}
+        {/* --- BOTONES DE EXPORTACIÓN Y ARCHIVOS --- */}
         <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm ml-2">
           <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Importar Datos">

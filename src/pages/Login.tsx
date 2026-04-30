@@ -4,7 +4,6 @@ import { Lock, User, LogIn, AlertCircle } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
 
-// IMPORTAMOS TU LOGO
 import logo from '../assets/logo.jpg';
 
 export default function Login() {

@@ -146,7 +146,7 @@ export default function PlanillaViewFacturaVenta() {
     }
   };
 
-  // --- EXPORTACIÓN (NUEVO) ---
+  // --- EXPORTACIÓN ---
   const exportarExcel = () => {
     const datosMapeados = hojaActiva.rows.map((r: any) => {
       if (isCopiapo) {

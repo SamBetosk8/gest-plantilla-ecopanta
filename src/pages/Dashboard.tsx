@@ -5,7 +5,6 @@ import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firesto
 import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb, Landmark } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-// IMPORTAMOS TU LOGO
 import logo from '../assets/logo.jpg';
 
 const parseCurrency = (val: any) => {
@@ -43,7 +42,7 @@ const normalizarFecha = (fechaStr: string) => {
   };
 };
 
-// AGREGAMOS EL CENTRO DE COSTOS A LAS PLANILLAS FIJAS
+// CENTRO DE COSTOS A LAS PLANILLAS FIJAS
 const PLANILLAS_FIJAS = [
   { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance', ciudad: 'calama' },
   { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
@@ -118,7 +117,7 @@ export default function Dashboard() {
     setModalFactura(null);
   };
 
-  // NUEVA FUNCIÓN PARA ABRIR EL CENTRO DE COSTOS
+  // ABRIR EL CENTRO DE COSTOS
   const manejarClickCostos = async (idCompleto: string) => {
     const existe = planillas.find(p => p.id === idCompleto);
     if (existe) {
