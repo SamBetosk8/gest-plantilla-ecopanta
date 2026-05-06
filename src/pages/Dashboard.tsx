@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
-import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb, Landmark } from 'lucide-react';
+import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb, Landmark, Package } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 import logo from '../assets/logo.jpg';
@@ -118,7 +118,7 @@ export default function Dashboard() {
     setModalFactura(null);
   };
 
-  // ABRIR EL CENTRO DE COSTOS
+  // ABRIR EL CENTRO DE COSTOS O INVENTARIO
   const manejarClickCostos = async (idCompleto: string) => {
     const existe = planillas.find(p => p.id === idCompleto);
     if (existe) {
@@ -156,8 +156,8 @@ export default function Dashboard() {
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Ignora las facturas y el centro de costos para el gráfico de ingresos
-      if (p.id.includes('factura') || p.id.includes('costos')) return;
+      // Ignora las facturas, centro de costos y el inventario para el gráfico de ingresos
+      if (p.id.includes('factura') || p.id.includes('costos') || p.id.includes('inventario')) return;
       
       (p.hojas || []).forEach((h: any) => {
         (h.rows || []).forEach((row: any) => {
@@ -278,6 +278,7 @@ export default function Dashboard() {
                     >
                       <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${bgColor}`}></div>
                       <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 bg-gradient-to-br ${gradColor}`}>
+                        {/* NUEVO ICONO */}
                         {esFactura ? <FileText size={36} /> : esCostos ? <Landmark size={36} /> : esInventario ? <Package size={36} /> : <Wallet size={36} />}
                       </div>
                       <div className="text-center z-10">
