@@ -48,7 +48,8 @@ const PLANILLAS_FIJAS = [
   { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
   { id: 'facturas-calama', titulo: 'FACTURAS CALAMA', tipo: 'factura', ciudad: 'calama' },
   { id: 'facturas-copiapo', titulo: 'FACTURAS COPIAPÓ', tipo: 'factura', ciudad: 'copiapo' },
-  { id: 'centro-costos-general', titulo: 'CENTRO DE COSTOS', tipo: 'costos', ciudad: 'general' }
+  { id: 'centro-costos-general', titulo: 'CENTRO DE COSTOS', tipo: 'costos', ciudad: 'general' },
+  { id: 'inventario-general', titulo: 'INVENTARIO BODEGA', tipo: 'inventario', ciudad: 'general' } 
 ];
 
 export default function Dashboard() {
@@ -249,38 +250,41 @@ export default function Dashboard() {
                 {PLANILLAS_FIJAS.map((pf) => {
                   const esFactura = pf.tipo === 'factura';
                   const esCostos = pf.tipo === 'costos';
-                  
-                  // Lógica de colores según el tipo de planilla
+                  const esInventario = pf.tipo === 'inventario'; 
+  
                   let bgColor = 'bg-blue-500';
                   let gradColor = 'from-blue-500 to-blue-600';
-                  
+  
                   if (esFactura) {
                     bgColor = 'bg-purple-500';
                     gradColor = 'from-purple-500 to-purple-600';
                   } else if (esCostos) {
                     bgColor = 'bg-emerald-500';
                     gradColor = 'from-emerald-500 to-emerald-600';
+                  } else if (esInventario) { // <-- NUEVO COLOR
+                    bgColor = 'bg-orange-500';
+                    gradColor = 'from-orange-500 to-orange-600';
                   }
-
                   return (
                     <button 
                       key={pf.id} 
                       onClick={() => {
                         if (esFactura) setModalFactura(pf.ciudad);
                         else if (esCostos) manejarClickCostos(pf.id);
+                        else if (esInventario) navigate(`/inventario/${pf.id}`); // <-- NUEVA NAVEGACIÓN
                         else manejarClickBalance(pf.id);
                       }} 
                       className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden"
                     >
                       <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${bgColor}`}></div>
                       <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 bg-gradient-to-br ${gradColor}`}>
-                        {esFactura ? <FileText size={36} /> : esCostos ? <Landmark size={36} /> : <Wallet size={36} />}
+                        {esFactura ? <FileText size={36} /> : esCostos ? <Landmark size={36} /> : esInventario ? <Package size={36} /> : <Wallet size={36} />}
                       </div>
                       <div className="text-center z-10">
                         <h3 className="font-black text-slate-800 text-lg uppercase tracking-tight leading-tight">{pf.titulo}</h3>
                       </div>
-                    </button>
-                  );
+                  </button>
+                );
                 })}
               </div>
 

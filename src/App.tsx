@@ -4,9 +4,9 @@ import Dashboard from './pages/Dashboard';
 import PlanillaViewBalance from './pages/PlanillaViewBalance';
 import PlanillaViewFacturaCompra from './pages/PlanillaViewFacturaCompra';
 import PlanillaViewFacturaVenta from './pages/PlanillaViewFacturaVenta';
-import PlanillaViewCentroCostos from './pages/PlanillaViewCentroCostos'; // <-- IMPORTAMOS EL CENTRO DE COSTOS
+import PlanillaViewCentroCostos from './pages/PlanillaViewCentroCostos';
+import PlanillaViewInventario from './pages/PlanillaViewInventario'; // <-- IMPORTAMOS EL INVENTARIO
 
-// Este componente protege las rutas. Si no hay sesión, te manda al Login.
 const RutaProtegida = ({ children }: { children: JSX.Element }) => {
   const usuario = sessionStorage.getItem('userName');
   if (!usuario) {
@@ -29,7 +29,6 @@ function App() {
           <RutaProtegida><PlanillaViewBalance /></RutaProtegida>
         } />
         
-        {/* Rutas Separadas para Facturas */}
         <Route path="/factura-compra/:id" element={
           <RutaProtegida><PlanillaViewFacturaCompra /></RutaProtegida>
         } />
@@ -38,9 +37,12 @@ function App() {
           <RutaProtegida><PlanillaViewFacturaVenta /></RutaProtegida>
         } />
 
-        {/* Ruta para el Centro de Costos */}
         <Route path="/centro-costos/:id" element={
           <RutaProtegida><PlanillaViewCentroCostos /></RutaProtegida>
+        } />
+
+        <Route path="/inventario/:id" element={
+          <RutaProtegida><PlanillaViewInventario /></RutaProtegida>
         } />
         
         <Route path="*" element={<Navigate to="/" replace />} />
