@@ -118,7 +118,7 @@ export default function Dashboard() {
     setModalFactura(null);
   };
 
-  // ABRIR EL CENTRO DE COSTOS
+  // ABRIR EL CENTRO DE COSTOS O INVENTARIO
   const manejarClickCostos = async (idCompleto: string) => {
     const existe = planillas.find(p => p.id === idCompleto);
     if (existe) {
@@ -156,7 +156,7 @@ export default function Dashboard() {
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Ignora las facturas, el centro de costos y el inventario para el gráfico de ingresos
+      // Ignora las facturas, centro de costos y el inventario para el gráfico de ingresos
       if (p.id.includes('factura') || p.id.includes('costos') || p.id.includes('inventario')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -245,7 +245,6 @@ export default function Dashboard() {
               {/* LAS PLANILLAS FIJAS */}
               <h3 className="text-lg font-bold text-slate-700 mb-4">Tus Planillas Principales</h3>
               
-              {/* Hemos ajustado las columnas para que quepan 5 tarjetas elegantemente */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
                 {PLANILLAS_FIJAS.map((pf) => {
                   const esFactura = pf.tipo === 'factura';
@@ -379,18 +378,21 @@ export default function Dashboard() {
                     <h3 className="text-xl font-black text-slate-800">Usuarios Activos ({usuariosDB.length})</h3>
                   </div>
                   <div className="divide-y divide-slate-100">
-                    {usuariosDB.map(u => (
+                    {usuariosDB.map(u => {
+                      // AQUÍ ESTÁ EL BLINDAJE CONTRA USUARIOS SIN NOMBRE
+                      const nombreSeguro = u.username || 'Desconocido';
+                      return (
                       <div key={u.id} className="p-6 flex items-center justify-between hover:bg-slate-50">
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-bold text-lg border border-slate-200">
-                            {u.username.charAt(0).toUpperCase()}
+                            {nombreSeguro.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <h4 className="font-bold text-slate-800 text-lg capitalize">{u.username}</h4>
+                            <h4 className="font-bold text-slate-800 text-lg capitalize">{nombreSeguro}</h4>
                             <p className="text-sm text-slate-500 font-medium flex items-center gap-2 mt-1">
                               <Key size={14} /> Contraseña: 
                               <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 flex items-center gap-2 font-mono tracking-widest">
-                                {mostrarPasswords[u.id] ? u.password : '••••••••'}
+                                {mostrarPasswords[u.id] ? (u.password || '---') : '••••••••'}
                                 <button onClick={() => setMostrarPasswords(prev => ({...prev, [u.id]: !prev[u.id]}))} className="text-slate-400 hover:text-blue-500 transition-colors ml-1" title="Mostrar/Ocultar contraseña">
                                   {mostrarPasswords[u.id] ? <EyeOff size={14} /> : <Eye size={14} />}
                                 </button>
@@ -399,11 +401,11 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${u.role === 'Administrador' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{u.role}</span>
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${u.role === 'Administrador' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>{u.role || 'Rol no asignado'}</span>
                           <button onClick={() => eliminarUsuario(u.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={20} /></button>
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
               </div>
