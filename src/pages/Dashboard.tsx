@@ -42,7 +42,7 @@ const normalizarFecha = (fechaStr: string) => {
   };
 };
 
-// CENTRO DE COSTOS A LAS PLANILLAS FIJAS
+// CENTRO DE COSTOS E INVENTARIO A LAS PLANILLAS FIJAS
 const PLANILLAS_FIJAS = [
   { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance', ciudad: 'calama' },
   { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
@@ -118,7 +118,7 @@ export default function Dashboard() {
     setModalFactura(null);
   };
 
-  // ABRIR EL CENTRO DE COSTOS O INVENTARIO
+  // ABRIR EL CENTRO DE COSTOS
   const manejarClickCostos = async (idCompleto: string) => {
     const existe = planillas.find(p => p.id === idCompleto);
     if (existe) {
@@ -156,7 +156,7 @@ export default function Dashboard() {
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Ignora las facturas, centro de costos y el inventario para el gráfico de ingresos
+      // Ignora las facturas, el centro de costos y el inventario para el gráfico de ingresos
       if (p.id.includes('factura') || p.id.includes('costos') || p.id.includes('inventario')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -261,7 +261,7 @@ export default function Dashboard() {
                   } else if (esCostos) {
                     bgColor = 'bg-emerald-500';
                     gradColor = 'from-emerald-500 to-emerald-600';
-                  } else if (esInventario) { // <-- NUEVO COLOR
+                  } else if (esInventario) {
                     bgColor = 'bg-orange-500';
                     gradColor = 'from-orange-500 to-orange-600';
                   }
@@ -271,14 +271,13 @@ export default function Dashboard() {
                       onClick={() => {
                         if (esFactura) setModalFactura(pf.ciudad);
                         else if (esCostos) manejarClickCostos(pf.id);
-                        else if (esInventario) navigate(`/inventario/${pf.id}`); // <-- NUEVA NAVEGACIÓN
+                        else if (esInventario) navigate(`/inventario/${pf.id}`);
                         else manejarClickBalance(pf.id);
                       }} 
                       className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden"
                     >
                       <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full opacity-10 transition-transform group-hover:scale-150 ${bgColor}`}></div>
                       <div className={`p-4 rounded-2xl text-white shadow-inner transition-transform group-hover:-translate-y-1 bg-gradient-to-br ${gradColor}`}>
-                        {/* NUEVO ICONO */}
                         {esFactura ? <FileText size={36} /> : esCostos ? <Landmark size={36} /> : esInventario ? <Package size={36} /> : <Wallet size={36} />}
                       </div>
                       <div className="text-center z-10">
