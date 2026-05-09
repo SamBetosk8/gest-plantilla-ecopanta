@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, setDoc, doc, deleteDoc } from 'firebase/firestore';
+// IMPORTANTE: Se agregó getDoc aquí
+import { collection, onSnapshot, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb, Landmark, Package } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -13,7 +14,6 @@ const parseCurrency = (val: any) => {
   return isNaN(num) ? 0 : num;
 };
 
-// LECTOR DE FECHAS ESTRICTO Y BLINDADO CONTRA DATOS FANTASMAS
 const normalizarFecha = (fechaStr: string) => {
   if (!fechaStr || typeof fechaStr !== 'string' || !fechaStr.includes('-')) return null;
   const parts = fechaStr.split('-');
@@ -42,14 +42,13 @@ const normalizarFecha = (fechaStr: string) => {
   };
 };
 
-// CENTRO DE COSTOS E INVENTARIO A LAS PLANILLAS FIJAS
 const PLANILLAS_FIJAS = [
   { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance', ciudad: 'calama' },
   { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
   { id: 'facturas-calama', titulo: 'FACTURAS CALAMA', tipo: 'factura', ciudad: 'calama' },
   { id: 'facturas-copiapo', titulo: 'FACTURAS COPIAPÓ', tipo: 'factura', ciudad: 'copiapo' },
   { id: 'centro-costos-general', titulo: 'CENTRO DE COSTOS', tipo: 'costos', ciudad: 'general' },
-  { id: 'inventario-general', titulo: 'INVENTARIO BODEGA', tipo: 'inventario', ciudad: 'general' } 
+  { id: 'inventario-general', titulo: 'INVENTARIO / BODEGA', tipo: 'inventario', ciudad: 'general' } 
 ];
 
 export default function Dashboard() {
@@ -82,65 +81,80 @@ export default function Dashboard() {
     });
     
     const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
-      // AQUÍ FILTRAMOS: Solo traemos a los usuarios que tengan el ID "eco_"
+      // AQUÍ FILTRAMOS: Solo muestra los de esta página
       const usuariosFiltrados = snapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(u => u.id.startsWith('eco_'));
+        .filter(u => u.id.startsWith('Eco_Plan_'));
       setUsuariosDB(usuariosFiltrados);
     });
 
     return () => { unsubPlanillas(); unsubUsuarios(); };
   }, []);
 
+  // --- LAS NUEVAS FUNCIONES SEGURAS CON getDoc() ---
   const manejarClickBalance = async (idCompleto: string) => {
-    const existe = planillas.find(p => p.id === idCompleto);
-    if (existe) {
-      navigate(`/balance/${idCompleto}`);
-    } else {
-      await setDoc(doc(db, 'planillas', idCompleto), {
+    const docRef = doc(db, 'planillas', idCompleto);
+    const docSnap = await getDoc(docRef); // Pregunta directa a Firebase
+    
+    if (!docSnap.exists()) {
+      await setDoc(docRef, {
         creado: new Date().toISOString(), creador: userName,
         hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [], sueldos: [], gastosOficina: [], gastosFijos: [], balanceGeneral: 0 }]
       });
-      navigate(`/balance/${idCompleto}`);
     }
+    navigate(`/balance/${idCompleto}`);
   };
 
   const abrirFacturaEspecifica = async (tipo: 'compra' | 'venta') => {
     if (!modalFactura) return;
     const idCompleto = `facturas-${tipo}-${modalFactura}`;
-    const existe = planillas.find(p => p.id === idCompleto);
     
-    if (existe) {
-      navigate(`/factura-${tipo}/${idCompleto}`);
-    } else {
-      await setDoc(doc(db, 'planillas', idCompleto), {
+    const docRef = doc(db, 'planillas', idCompleto);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      await setDoc(docRef, {
         creado: new Date().toISOString(), creador: userName,
         hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [] }]
       });
-      navigate(`/factura-${tipo}/${idCompleto}`);
     }
+    navigate(`/factura-${tipo}/${idCompleto}`);
     setModalFactura(null);
   };
 
   const manejarClickCostos = async (idCompleto: string) => {
-    const existe = planillas.find(p => p.id === idCompleto);
-    if (existe) {
-      navigate(`/centro-costos/${idCompleto}`);
-    } else {
-      await setDoc(doc(db, 'planillas', idCompleto), {
+    const docRef = doc(db, 'planillas', idCompleto);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      await setDoc(docRef, {
         creado: new Date().toISOString(), creador: userName,
         hojas: [{ id: 'hoja-1', nombre: 'Mes 1', rows: [] }]
       });
-      navigate(`/centro-costos/${idCompleto}`);
     }
+    navigate(`/centro-costos/${idCompleto}`);
   };
 
+  const manejarClickInventario = async (idCompleto: string) => {
+    const docRef = doc(db, 'planillas', idCompleto);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      await setDoc(docRef, {
+        creado: new Date().toISOString(), creador: userName,
+        hojas: [{ id: 'hoja-1', nombre: 'Bodega Principal', rows: [] }]
+      });
+    }
+    navigate(`/inventario/${idCompleto}`);
+  };
+
+  // --- CREAR Y ELIMINAR USUARIOS (SEGURO) ---
   const crearUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword) return;
     
-    // AQUÍ AGREGAMOS EL PREFIJO "eco_" PARA IDENTIFICARLOS
-    const idUnico = 'eco_' + newUsername.toLowerCase().replace(/\s+/g, '');
+    // Agregamos el prefijo de la App Ecopanta
+    const idUnico = 'Eco_Plan_' + newUsername.toLowerCase().replace(/\s+/g, '');
     await setDoc(doc(db, 'usuarios', idUnico), {
       username: newUsername, password: newPassword, role: newRole, creado: new Date().toISOString()
     });
@@ -148,8 +162,8 @@ export default function Dashboard() {
   };
 
   const eliminarUsuario = async (idUser: string) => {
-    if (idUser === 'eco_admin' || idUser === 'admin') return alert('No puedes eliminar al admin principal.');
-    if (window.confirm('¿Seguro que deseas eliminar este usuario?')) {
+    if (idUser === 'Eco_Plan_admin' || idUser === 'admin') return alert('No puedes eliminar al admin principal.');
+    if (window.confirm('¿Seguro que deseas eliminar este usuario? (Tus otros sistemas no se verán afectados)')) {
       await deleteDoc(doc(db, 'usuarios', idUser));
     }
   };
@@ -161,7 +175,6 @@ export default function Dashboard() {
     const agrupadoDrilldown: any = {};
 
     planillas.forEach(p => {
-      // Ignora las facturas, centro de costos y el inventario para el gráfico de ingresos
       if (p.id.includes('factura') || p.id.includes('costos') || p.id.includes('inventario')) return;
       
       (p.hojas || []).forEach((h: any) => {
@@ -213,7 +226,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      {/* MENÚ LATERAL CON LOGO CENTRADO Y GRANDE */}
+      {/* MENÚ LATERAL */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
         <div className="p-8 border-b border-slate-100 flex flex-col items-center gap-4 text-center">
           <img src={logo} alt="Ecopanta" className="w-32 h-32 object-contain rounded-3xl shadow-lg border-4 border-white transition-transform hover:scale-105" />
@@ -275,7 +288,7 @@ export default function Dashboard() {
                       onClick={() => {
                         if (esFactura) setModalFactura(pf.ciudad);
                         else if (esCostos) manejarClickCostos(pf.id);
-                        else if (esInventario) navigate(`/inventario/${pf.id}`);
+                        else if (esInventario) manejarClickInventario(pf.id); // Llamada segura
                         else manejarClickBalance(pf.id);
                       }} 
                       className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden"

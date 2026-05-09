@@ -22,9 +22,9 @@ export default function Login() {
     try {
       const inputUser = username.trim().toLowerCase();
 
-      // ADMIN DE ESTA PÁGINA (creado con el ID eco_admin)
+      // ADMIN DE ESTA PÁGINA (creado con el ID Eco_Plan_admin)
       if (inputUser === 'admin' && password === 'admin') {
-        await setDoc(doc(db, 'usuarios', 'eco_admin'), {
+        await setDoc(doc(db, 'usuarios', 'Eco_Plan_admin'), {
           username: 'Admin',
           password: 'admin',
           role: 'Administrador',
@@ -42,8 +42,8 @@ export default function Login() {
       let nombreReal = '';
 
       snapshot.forEach((doc) => {
-        // BLINDAJE: Si el usuario NO empieza con "eco_", lo ignoramos completamente
-        if (!doc.id.startsWith('eco_')) return;
+        // BLINDAJE: Si el usuario NO empieza con "Eco_Plan_", lo ignoramos completamente
+        if (!doc.id.startsWith('Eco_Plan_')) return;
 
         const data = doc.data();
         if (data.username && data.username.toLowerCase() === inputUser && data.password === password) {
@@ -75,7 +75,6 @@ export default function Login() {
       <div className="bg-white/80 backdrop-blur-xl p-8 md:p-12 rounded-3xl shadow-2xl w-full max-w-lg border border-white relative z-10">
         
         <div className="text-center mb-10 space-y-3">
-          {/* EL LOGO GIGANTE Y CENTRADO */}
           <div className="mx-auto w-40 h-40 bg-white rounded-3xl flex items-center justify-center shadow-lg shadow-green-500/10 mb-8 p-1.5 transform transition hover:scale-105 border border-slate-100">
             <img src={logo} alt="Ecopanta Logo" className="w-full h-full object-contain rounded-2xl" />
           </div>
