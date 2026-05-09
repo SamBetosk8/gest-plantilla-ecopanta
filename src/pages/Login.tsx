@@ -4,6 +4,7 @@ import { Lock, User, LogIn, AlertCircle } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
 
+// IMPORTAMOS TU LOGO
 import logo from '../assets/logo.jpg';
 
 export default function Login() {
@@ -21,8 +22,9 @@ export default function Login() {
     try {
       const inputUser = username.trim().toLowerCase();
 
+      // ADMIN DE ESTA PÁGINA (creado con el ID eco_admin)
       if (inputUser === 'admin' && password === 'admin') {
-        await setDoc(doc(db, 'usuarios', 'admin'), {
+        await setDoc(doc(db, 'usuarios', 'eco_admin'), {
           username: 'Admin',
           password: 'admin',
           role: 'Administrador',
@@ -40,6 +42,9 @@ export default function Login() {
       let nombreReal = '';
 
       snapshot.forEach((doc) => {
+        // BLINDAJE: Si el usuario NO empieza con "eco_", lo ignoramos completamente
+        if (!doc.id.startsWith('eco_')) return;
+
         const data = doc.data();
         if (data.username && data.username.toLowerCase() === inputUser && data.password === password) {
           usuarioValido = true;

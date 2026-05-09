@@ -82,7 +82,11 @@ export default function Dashboard() {
     });
     
     const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
-      setUsuariosDB(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      // AQUÍ FILTRAMOS: Solo traemos a los usuarios que tengan el ID "eco_"
+      const usuariosFiltrados = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(u => u.id.startsWith('eco_'));
+      setUsuariosDB(usuariosFiltrados);
     });
 
     return () => { unsubPlanillas(); unsubUsuarios(); };
@@ -118,7 +122,6 @@ export default function Dashboard() {
     setModalFactura(null);
   };
 
-  // ABRIR EL CENTRO DE COSTOS O INVENTARIO
   const manejarClickCostos = async (idCompleto: string) => {
     const existe = planillas.find(p => p.id === idCompleto);
     if (existe) {
@@ -135,7 +138,9 @@ export default function Dashboard() {
   const crearUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword) return;
-    const idUnico = newUsername.toLowerCase().replace(/\s+/g, '');
+    
+    // AQUÍ AGREGAMOS EL PREFIJO "eco_" PARA IDENTIFICARLOS
+    const idUnico = 'eco_' + newUsername.toLowerCase().replace(/\s+/g, '');
     await setDoc(doc(db, 'usuarios', idUnico), {
       username: newUsername, password: newPassword, role: newRole, creado: new Date().toISOString()
     });
@@ -143,7 +148,7 @@ export default function Dashboard() {
   };
 
   const eliminarUsuario = async (idUser: string) => {
-    if (idUser === 'admin') return alert('No puedes eliminar al admin principal.');
+    if (idUser === 'eco_admin' || idUser === 'admin') return alert('No puedes eliminar al admin principal.');
     if (window.confirm('¿Seguro que deseas eliminar este usuario?')) {
       await deleteDoc(doc(db, 'usuarios', idUser));
     }
@@ -379,7 +384,6 @@ export default function Dashboard() {
                   </div>
                   <div className="divide-y divide-slate-100">
                     {usuariosDB.map(u => {
-                      // AQUÍ ESTÁ EL BLINDAJE CONTRA USUARIOS SIN NOMBRE
                       const nombreSeguro = u.username || 'Desconocido';
                       return (
                       <div key={u.id} className="p-6 flex items-center justify-between hover:bg-slate-50">
