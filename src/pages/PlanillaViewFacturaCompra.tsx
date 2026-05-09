@@ -93,10 +93,10 @@ export default function PlanillaViewFacturaCompra() {
 
   const sumaTotal = isCopiapo ? sumaCopiapoNeto : sumaFacturas + sumaBoletas;
 
-  // --- FIREBASE SYNC ---
+  // --- FIREBASE SYNC (AISLADO) ---
   useEffect(() => {
     if (!id) return;
-    const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
+    const unsub = onSnapshot(doc(db, 'eco_planillas', id), (docSnap) => {
       if (docSnap.exists() && docSnap.data().hojas) setHojas(docSnap.data().hojas);
     });
     return () => unsub();
@@ -104,15 +104,15 @@ export default function PlanillaViewFacturaCompra() {
 
   useEffect(() => {
     if (!id) return;
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: null, activeSheet: hojaActivaId });
     onDisconnect(presenceRef).remove();
-    onValue(ref(rtdb, `presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
+    onValue(ref(rtdb, `eco_presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
   }, [id, userName, hojaActivaId]);
 
   const guardarEnNube = async (nuevasHojas: any[]) => {
     if (!id) return;
-    await setDoc(doc(db, 'planillas', id), { hojas: nuevasHojas }, { merge: true });
+    await setDoc(doc(db, 'eco_planillas', id), { hojas: nuevasHojas }, { merge: true });
   };
 
   const procesarCambiosMain = (nuevasFilas: any[]) => {
@@ -357,7 +357,7 @@ export default function PlanillaViewFacturaCompra() {
 
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: { row: args.row.id, column: args.column.key }, activeSheet: hojaActivaId });
   };
 
@@ -423,7 +423,7 @@ export default function PlanillaViewFacturaCompra() {
           <button onClick={() => pintarCelda('')} className="w-6 h-6 rounded bg-white border text-xs text-gray-400">✖</button>
         </div>
 
-        {/* --- BOTONES DE EXPORTACIÓN Y ARCHIVOS --- */}
+        {/* --- NUEVOS BOTONES DE EXPORTACIÓN Y ARCHIVOS --- */}
         <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm ml-2">
           <input type="file" ref={fileInputRef} onChange={importarExcel} accept=".xlsx, .xls, .csv" className="hidden" />
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 text-gray-600 hover:bg-gray-50 px-3 py-1.5 rounded-lg text-sm font-bold transition-all" title="Importar Datos">

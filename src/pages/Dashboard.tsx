@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
-// IMPORTANTE: Se agregó getDoc aquí
 import { collection, onSnapshot, setDoc, doc, deleteDoc, getDoc } from 'firebase/firestore';
 import { Plus, BarChart3, Calendar, LayoutDashboard, FileText, Wallet, Users, Key, Trash2, ArrowLeft, Eye, EyeOff, X, ShoppingCart, Tags, Lightbulb, Landmark, Package } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -14,6 +13,7 @@ const parseCurrency = (val: any) => {
   return isNaN(num) ? 0 : num;
 };
 
+// LECTOR DE FECHAS ESTRICTO Y BLINDADO CONTRA DATOS FANTASMAS
 const normalizarFecha = (fechaStr: string) => {
   if (!fechaStr || typeof fechaStr !== 'string' || !fechaStr.includes('-')) return null;
   const parts = fechaStr.split('-');
@@ -42,6 +42,7 @@ const normalizarFecha = (fechaStr: string) => {
   };
 };
 
+// PLANILLAS FIJAS
 const PLANILLAS_FIJAS = [
   { id: 'balance-calama', titulo: 'BALANCE CALAMA', tipo: 'balance', ciudad: 'calama' },
   { id: 'balance-copiapo', titulo: 'BALANCE COPIAPÓ', tipo: 'balance', ciudad: 'copiapo' },
@@ -76,12 +77,13 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    const unsubPlanillas = onSnapshot(collection(db, 'planillas'), (snapshot) => {
+    // AHORA LEE DE eco_planillas
+    const unsubPlanillas = onSnapshot(collection(db, 'eco_planillas'), (snapshot) => {
       setPlanillas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     
-    const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
-      // AQUÍ FILTRAMOS: Solo muestra los de esta página
+    // AHORA LEE DE eco_usuarios
+    const unsubUsuarios = onSnapshot(collection(db, 'eco_usuarios'), (snapshot) => {
       const usuariosFiltrados = snapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(u => u.id.startsWith('Eco_Plan_'));
@@ -91,10 +93,10 @@ export default function Dashboard() {
     return () => { unsubPlanillas(); unsubUsuarios(); };
   }, []);
 
-  // --- LAS NUEVAS FUNCIONES SEGURAS CON getDoc() ---
+  // FUNCIONES DE CLIC CON VERIFICACIÓN SEGURA PARA NO BORRAR DATOS
   const manejarClickBalance = async (idCompleto: string) => {
-    const docRef = doc(db, 'planillas', idCompleto);
-    const docSnap = await getDoc(docRef); // Pregunta directa a Firebase
+    const docRef = doc(db, 'eco_planillas', idCompleto);
+    const docSnap = await getDoc(docRef);
     
     if (!docSnap.exists()) {
       await setDoc(docRef, {
@@ -109,7 +111,7 @@ export default function Dashboard() {
     if (!modalFactura) return;
     const idCompleto = `facturas-${tipo}-${modalFactura}`;
     
-    const docRef = doc(db, 'planillas', idCompleto);
+    const docRef = doc(db, 'eco_planillas', idCompleto);
     const docSnap = await getDoc(docRef);
     
     if (!docSnap.exists()) {
@@ -123,7 +125,7 @@ export default function Dashboard() {
   };
 
   const manejarClickCostos = async (idCompleto: string) => {
-    const docRef = doc(db, 'planillas', idCompleto);
+    const docRef = doc(db, 'eco_planillas', idCompleto);
     const docSnap = await getDoc(docRef);
     
     if (!docSnap.exists()) {
@@ -136,7 +138,7 @@ export default function Dashboard() {
   };
 
   const manejarClickInventario = async (idCompleto: string) => {
-    const docRef = doc(db, 'planillas', idCompleto);
+    const docRef = doc(db, 'eco_planillas', idCompleto);
     const docSnap = await getDoc(docRef);
     
     if (!docSnap.exists()) {
@@ -148,14 +150,14 @@ export default function Dashboard() {
     navigate(`/inventario/${idCompleto}`);
   };
 
-  // --- CREAR Y ELIMINAR USUARIOS (SEGURO) ---
   const crearUsuario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername || !newPassword) return;
     
-    // Agregamos el prefijo de la App Ecopanta
     const idUnico = 'Eco_Plan_' + newUsername.toLowerCase().replace(/\s+/g, '');
-    await setDoc(doc(db, 'usuarios', idUnico), {
+    
+    // AHORA GUARDA EN eco_usuarios
+    await setDoc(doc(db, 'eco_usuarios', idUnico), {
       username: newUsername, password: newPassword, role: newRole, creado: new Date().toISOString()
     });
     setNewUsername(''); setNewPassword(''); alert('Usuario Creado Exitosamente');
@@ -164,7 +166,8 @@ export default function Dashboard() {
   const eliminarUsuario = async (idUser: string) => {
     if (idUser === 'Eco_Plan_admin' || idUser === 'admin') return alert('No puedes eliminar al admin principal.');
     if (window.confirm('¿Seguro que deseas eliminar este usuario? (Tus otros sistemas no se verán afectados)')) {
-      await deleteDoc(doc(db, 'usuarios', idUser));
+      // AHORA ELIMINA DE eco_usuarios
+      await deleteDoc(doc(db, 'eco_usuarios', idUser));
     }
   };
 
@@ -226,7 +229,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-[#f8fafc]">
-      {/* MENÚ LATERAL */}
+      {/* MENÚ LATERAL CON LOGO CENTRADO Y GRANDE */}
       <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
         <div className="p-8 border-b border-slate-100 flex flex-col items-center gap-4 text-center">
           <img src={logo} alt="Ecopanta" className="w-32 h-32 object-contain rounded-3xl shadow-lg border-4 border-white transition-transform hover:scale-105" />
@@ -288,7 +291,7 @@ export default function Dashboard() {
                       onClick={() => {
                         if (esFactura) setModalFactura(pf.ciudad);
                         else if (esCostos) manejarClickCostos(pf.id);
-                        else if (esInventario) manejarClickInventario(pf.id); // Llamada segura
+                        else if (esInventario) manejarClickInventario(pf.id);
                         else manejarClickBalance(pf.id);
                       }} 
                       className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-blue-500 hover:shadow-xl transition-all group flex flex-col justify-center items-center gap-5 h-52 relative overflow-hidden"

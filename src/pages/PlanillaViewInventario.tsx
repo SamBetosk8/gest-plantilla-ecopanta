@@ -58,11 +58,9 @@ export default function PlanillaViewInventario() {
 
       totalItems += cant;
       
-      // Separar la plata entre lo Activo y lo Pasivo
       if (clasificacion.includes('pasivo')) {
         valorPasivos += vTotal;
       } else {
-        // Por defecto asume que es Activo si no dice pasivo
         valorActivos += vTotal;
       }
     });
@@ -70,10 +68,10 @@ export default function PlanillaViewInventario() {
     return { totalItems, valorActivos, valorPasivos };
   }, [hojaActiva.rows]);
 
-  // --- FIREBASE SYNC ---
+  // --- FIREBASE SYNC (AISLADO) ---
   useEffect(() => {
     if (!id) return;
-    const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
+    const unsub = onSnapshot(doc(db, 'eco_planillas', id), (docSnap) => {
       if (docSnap.exists() && docSnap.data().hojas) setHojas(docSnap.data().hojas);
     });
     return () => unsub();
@@ -81,15 +79,15 @@ export default function PlanillaViewInventario() {
 
   useEffect(() => {
     if (!id) return;
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: null, activeSheet: hojaActivaId });
     onDisconnect(presenceRef).remove();
-    onValue(ref(rtdb, `presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
+    onValue(ref(rtdb, `eco_presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
   }, [id, userName, hojaActivaId]);
 
   const guardarEnNube = async (nuevasHojas: any[]) => {
     if (!id) return;
-    await setDoc(doc(db, 'planillas', id), { hojas: nuevasHojas }, { merge: true });
+    await setDoc(doc(db, 'eco_planillas', id), { hojas: nuevasHojas }, { merge: true });
   };
 
   const procesarCambiosMain = (nuevasFilas: any[]) => {
@@ -256,7 +254,7 @@ export default function PlanillaViewInventario() {
 
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: { row: args.row.id, column: args.column.key }, activeSheet: hojaActivaId });
   };
 
@@ -281,7 +279,6 @@ export default function PlanillaViewInventario() {
   const columnas = useMemo(() => [
     { key: 'id', name: 'CÓDIGO', width: 90, resizable: true, renderCell: (p: any) => <strong className="text-orange-700 bg-orange-50 px-2 py-1 rounded">INV-{p.row.id}</strong> },
     { key: 'item', name: 'HERRAMIENTA / ITEM', renderEditCell: textEditor, width: 350, resizable: true, cellClass: (r: any) => getCellClass(r, 'item') },
-    // NUEVA COLUMNA DE ACTIVO O PASIVO
     { key: 'clasificacion', name: 'CLASIFICACIÓN (Activo / Pasivo)', renderEditCell: textEditor, width: 220, resizable: true, cellClass: (r: any) => getCellClass(r, 'clasificacion') },
     { key: 'cantidad', name: 'CANT.', renderEditCell: textEditor, width: 80, resizable: true, cellClass: (r: any) => getCellClass(r, 'cantidad') },
     { key: 'valorUnitario', name: 'VALOR UNIT.', renderEditCell: textEditor, width: 150, resizable: true, renderCell: (p:any) => formatMoney(p.row.valorUnitario), cellClass: (r: any) => getCellClass(r, 'valorUnitario') },
@@ -336,7 +333,6 @@ export default function PlanillaViewInventario() {
       {/* --- CONTENIDO PRINCIPAL --- */}
       <div className="flex-1 overflow-auto p-4 md:p-6 flex flex-col gap-6">
         
-        {/* TARJETAS DE INDICADORES (NUEVO CÁLCULO ACTIVO VS PASIVO) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 shrink-0">
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm relative overflow-hidden group">
             <div className="absolute -right-6 -top-6 text-slate-50 opacity-50 group-hover:scale-110 transition-transform"><Boxes size={120}/></div>
@@ -345,7 +341,6 @@ export default function PlanillaViewInventario() {
             <p className="text-xs font-medium text-slate-400 mt-2 relative z-10">Cantidad de unidades registradas</p>
           </div>
 
-          {/* TARJETA ACTIVOS */}
           <div className="bg-emerald-50 rounded-3xl p-6 border border-emerald-200 shadow-sm relative overflow-hidden group">
             <div className="absolute -right-6 -top-6 text-emerald-100 opacity-50 group-hover:scale-110 transition-transform"><Activity size={120}/></div>
             <p className="text-sm font-bold text-emerald-600 uppercase tracking-widest mb-1 relative z-10">Herramientas Activas</p>
@@ -353,7 +348,6 @@ export default function PlanillaViewInventario() {
             <p className="text-xs font-medium text-emerald-600/70 mt-3 relative z-10">Suma del valor de activos operativos</p>
           </div>
 
-          {/* TARJETA PASIVOS */}
           <div className="bg-slate-100 rounded-3xl p-6 border border-slate-300 shadow-sm relative overflow-hidden group">
             <div className="absolute -right-6 -top-6 text-slate-200 opacity-50 group-hover:scale-110 transition-transform"><Archive size={120}/></div>
             <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-1 relative z-10">Herramientas Pasivas</p>
@@ -364,7 +358,6 @@ export default function PlanillaViewInventario() {
           </div>
         </div>
 
-        {/* TABLA DE BODEGA */}
         <div className="flex-1 bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col overflow-hidden min-h-[400px]">
           <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <h3 className="font-black text-slate-800">Inventario Detallado</h3>

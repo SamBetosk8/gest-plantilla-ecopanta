@@ -85,10 +85,10 @@ export default function PlanillaViewBalance() {
 
   const granTotalGastosFijos = totalSueldos + totalOficina;
 
-  // --- SINCROMIZACIÓN CON FIREBASE ---
+  // --- SINCROMIZACIÓN CON FIREBASE AISLADA ---
   useEffect(() => {
     if (!id) return;
-    const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
+    const unsub = onSnapshot(doc(db, 'eco_planillas', id), (docSnap) => {
       if (docSnap.exists() && docSnap.data().hojas) setHojas(docSnap.data().hojas);
     });
     return () => unsub();
@@ -96,15 +96,15 @@ export default function PlanillaViewBalance() {
 
   useEffect(() => {
     if (!id) return;
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: null, activeSheet: hojaActivaId });
     onDisconnect(presenceRef).remove();
-    onValue(ref(rtdb, `presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
+    onValue(ref(rtdb, `eco_presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
   }, [id, userName, hojaActivaId]);
 
   const guardarEnNube = async (nuevasHojas: any[]) => {
     if (!id) return;
-    await setDoc(doc(db, 'planillas', id), { hojas: nuevasHojas }, { merge: true });
+    await setDoc(doc(db, 'eco_planillas', id), { hojas: nuevasHojas }, { merge: true });
   };
 
   // --- EDICIÓN DE TABLAS ---
@@ -257,7 +257,7 @@ export default function PlanillaViewBalance() {
                }
             } else if (isCopiapo) {
                if (isEnero) {
-                  if (excelRow >= 69 && excelRow <= 81) forceLeftMode = 'OFICINA'; // Sueldos estarían antes del 69
+                  if (excelRow >= 69 && excelRow <= 81) forceLeftMode = 'OFICINA'; 
                } else {
                   if (excelRow >= 68 && excelRow <= 80) forceLeftMode = 'OFICINA';
                }
@@ -388,7 +388,7 @@ export default function PlanillaViewBalance() {
 
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: { row: args.row.id, column: args.column.key }, activeSheet: hojaActivaId });
   };
 

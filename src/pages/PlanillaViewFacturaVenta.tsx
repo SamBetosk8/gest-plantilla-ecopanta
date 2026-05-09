@@ -90,10 +90,10 @@ export default function PlanillaViewFacturaVenta() {
 
   const sumaTotal = isCopiapo ? sumaCopiapoNeto : sumaFacturas + sumaBoletas;
 
-  // --- FIREBASE SYNC ---
+  // --- FIREBASE SYNC (AISLADO) ---
   useEffect(() => {
     if (!id) return;
-    const unsub = onSnapshot(doc(db, 'planillas', id), (docSnap) => {
+    const unsub = onSnapshot(doc(db, 'eco_planillas', id), (docSnap) => {
       if (docSnap.exists() && docSnap.data().hojas) setHojas(docSnap.data().hojas);
     });
     return () => unsub();
@@ -101,15 +101,15 @@ export default function PlanillaViewFacturaVenta() {
 
   useEffect(() => {
     if (!id) return;
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: null, activeSheet: hojaActivaId });
     onDisconnect(presenceRef).remove();
-    onValue(ref(rtdb, `presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
+    onValue(ref(rtdb, `eco_presence/${id}`), (snap) => setActiveUsers(snap.val() || {}));
   }, [id, userName, hojaActivaId]);
 
   const guardarEnNube = async (nuevasHojas: any[]) => {
     if (!id) return;
-    await setDoc(doc(db, 'planillas', id), { hojas: nuevasHojas }, { merge: true });
+    await setDoc(doc(db, 'eco_planillas', id), { hojas: nuevasHojas }, { merge: true });
   };
 
   const procesarCambiosMain = (nuevasFilas: any[]) => {
@@ -146,7 +146,7 @@ export default function PlanillaViewFacturaVenta() {
     }
   };
 
-  // --- EXPORTACIÓN ---
+  // --- EXPORTACIÓN (NUEVO) ---
   const exportarExcel = () => {
     const datosMapeados = hojaActiva.rows.map((r: any) => {
       if (isCopiapo) {
@@ -325,7 +325,7 @@ export default function PlanillaViewFacturaVenta() {
               let vTotalFactura = '0', vTotalBoleta = '0';
 
               if (idxTotalFac !== -1) vTotalFactura = rowArr[idxTotalFac] || '0';
-              else if (idxTotalGen !== -1) vTotalFactura = rowArr[idxTotalGen] || '0'; // Fallback a columna 'TOTAL' general
+              else if (idxTotalGen !== -1) vTotalFactura = rowArr[idxTotalGen] || '0'; // Fallback a columna 'TOTAL'
               
               if (idxTotalBol !== -1) vTotalBoleta = rowArr[idxTotalBol] || '0';
 
@@ -355,7 +355,7 @@ export default function PlanillaViewFacturaVenta() {
 
   const handleCellClick = (args: any) => {
     setCeldaSeleccionada({ rowId: args.row.id, columnKey: args.column.key });
-    const presenceRef = ref(rtdb, `presence/${id}/${userName}`);
+    const presenceRef = ref(rtdb, `eco_presence/${id}/${userName}`);
     set(presenceRef, { name: userName, editing: { row: args.row.id, column: args.column.key }, activeSheet: hojaActivaId });
   };
 
