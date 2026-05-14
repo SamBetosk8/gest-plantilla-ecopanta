@@ -77,12 +77,12 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    // AHORA LEE DE eco_planillas
+    // LEE DE eco_planillas
     const unsubPlanillas = onSnapshot(collection(db, 'eco_planillas'), (snapshot) => {
       setPlanillas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     
-    // AHORA LEE DE eco_usuarios
+    // LEE DE eco_usuarios
     const unsubUsuarios = onSnapshot(collection(db, 'eco_usuarios'), (snapshot) => {
       const usuariosFiltrados = snapshot.docs
         .map(d => ({ id: d.id, ...d.data() }))
